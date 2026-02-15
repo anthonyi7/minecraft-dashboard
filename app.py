@@ -1,11 +1,27 @@
+"""
+Minecraft Dashboard - Main FastAPI Application
+
+This is the backend server that:
+1. Serves the static frontend (HTML/CSS/JS)
+2. Provides API endpoints for the frontend to fetch data
+3. Connects to your Minecraft server via RCON to get real-time data
+4. Runs a background task to poll RCON and cache results every 10 seconds
+"""
+
+import asyncio
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+# Import our services
+from rcon_service import rcon_service
+from cache_service import cache_service
 
 app = FastAPI(title="Minecraft Dashboard")
 
 # CORS middleware for local development
+# This allows the frontend to make API calls to the backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,30 +30,161 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============================================================================
+# Background Polling Task
+# ============================================================================
+
+
+async def poll_minecraft_server():
+    """
+    Background task that polls the Minecraft server every 10 seconds.
+
+    This runs continuously in the background and updates the cache with
+    fresh data from RCON. This way:
+    - API endpoints return instantly from cache (no RCON wait)
+    - Multiple dashboards don't spam the server with RCON requests
+    - Users see last known good data even if RCON temporarily fails
+
+    The polling interval is 10 seconds - you can adjust this by changing
+    the asyncio.sleep(10) at the bottom.
+    """
+    print("Background polling task started - polling RCON every 10 seconds")
+
+    while True:
+        try:
+            # Poll RCON for current server state
+            is_online = await rcon_service.is_server_online()
+            current_players = await rcon_service.get_online_players()
+            max_players = await rcon_service.get_max_players()
+
+            # Update the cache with fresh data
+            cache_service.update(
+                online=is_online,
+                players_current=current_players,
+                players_max=max_players,
+                # Performance metrics still mocked for now
+                tps=19.87,
+                memory_used_mb=2048,
+                memory_total_mb=4096,
+                error=None,  # No error if we got here
+            )
+
+            status = "online" if is_online else "offline"
+            print(f"✅ Cache updated: Server {status}, {len(current_players)}/{max_players} players")
+
+        except Exception as e:
+            # If RCON fails, update cache with error but keep old data
+            print(f"RCON polling error: {e}")
+            cache_service.update(
+                online=False,
+                players_current=[],
+                players_max=0,
+                tps=0.0,
+                memory_used_mb=0,
+                memory_total_mb=0,
+                error=str(e),
+            )
+
+        # Wait 10 seconds before next poll
+        # You can adjust this interval if needed (e.g., 5 or 30 seconds)
+        await asyncio.sleep(5)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Run when FastAPI application starts up.
+
+    This launches the background polling task that will run continuously
+    until the application shuts down.
+
+    Note: on_event is deprecated in newer FastAPI versions in favor of
+    lifespan events, but it still works fine and is simpler to understand.
+    We can upgrade to the lifespan pattern later if needed.
+    """
+    # Create the background task and let it run independently
+    # We don't await it - it runs in the background forever
+    asyncio.create_task(poll_minecraft_server())
+
+
+# ============================================================================
+# API Endpoints
+# ============================================================================
+
+
 @app.get("/api/healthz")
 async def healthz():
-    """Health check endpoint"""
+    """
+    Health check endpoint for the dashboard itself.
+
+    Returns:
+        {"ok": True} if the dashboard backend is running.
+
+    Note: This checks if the dashboard is healthy, not the Minecraft server.
+    """
     return {"ok": True}
+
+
+@app.get("/api/players")
+async def get_players():
+    """
+    Get current players online from the Minecraft server.
+
+    NEW in Step 3: This now returns CACHED data instead of making a
+    direct RCON call. The background polling task updates the cache
+    every 10 seconds.
+
+    Benefits:
+    - Instant response (no waiting for RCON)
+    - Multiple dashboards don't spam the server
+    - Shows last known good data even if RCON temporarily fails
+
+    Returns:
+        {
+            "current": ["Steve", "Alex"],  # List of player names
+            "count": 2,                      # Number of players online
+            "max": 20,                       # Max players allowed
+            "stale": false,                  # True if data >30s old
+            "last_updated": "2024-01-15T12:34:56Z"
+        }
+    """
+    # Simply return cached data - no RCON call in request path!
+    return cache_service.get_players()
+
 
 @app.get("/api/status")
 async def status():
-    """Mock server status endpoint"""
-    return {
-        "online": True,
-        "players": {
-            "current": ["Steve", "Alex", "Herobrine"],
-            "count": 3,
-            "max": 20
-        },
-        "performance": {
-            "tps": 19.87,
-            "memory_used_mb": 2048,
-            "memory_total_mb": 4096
+    """
+    Get overall server status with player info and performance.
+
+    NEW in Step 3: This now returns CACHED data from the background
+    polling task instead of making direct RCON calls.
+
+    This is the main endpoint the dashboard uses. It combines:
+    - Server online/offline status
+    - Player information
+    - Performance metrics (still mocked, will be real in future steps)
+    - Staleness indicator (true if data >30s old)
+    - Last update timestamp
+
+    Returns:
+        {
+            "online": true/false,
+            "players": { ... player data ... },
+            "performance": { ... performance data ... },
+            "stale": false,
+            "last_updated": "2024-01-15T12:34:56Z",
+            "last_error": null
         }
-    }
+    """
+    # Simply return cached data - instant response, no RCON wait!
+    return cache_service.get()
+
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/")
 async def root():
