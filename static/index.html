@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Minecraft Server Dashboard</h1>
+        </header>
+
+        <main class="dashboard">
+            <div class="card">
+                <h2>Server Status</h2>
+                <div id="server-status" class="status">Loading...</div>
+            </div>
+
+            <div class="card">
+                <h2>Players Online</h2>
+                <div id="player-count">Loading...</div>
+                <ul id="player-list"></ul>
+            </div>
+
+            <div class="card">
+                <h2>Performance</h2>
+                <div class="metric">
+                    <span class="label">TPS:</span>
+                    <span id="tps">--</span>
+                </div>
+                <div class="metric">
+                    <span class="label">Memory:</span>
+                    <span id="memory">--</span>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Last updated: <span id="last-updated">Never</span></p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
