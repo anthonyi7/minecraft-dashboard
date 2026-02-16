@@ -6,7 +6,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(180deg, #696969 0%, #c2825e 100%);
     min-height: 100vh;
     padding: 20px;
 }
@@ -226,4 +226,72 @@ footer {
 
 .error {
     color: #ef4444;
+}
+
+/* Header Timestamp */
+.last-updated-header {
+    color: white;
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin-top: 8px;
+    text-align: center;
+}
+
+.last-updated-header span {
+    font-weight: bold;
+}
+
+/* Leaderboard Tables */
+.leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.9rem;
+}
+
+.leaderboard-table thead {
+    background: #f3f4f6;
+}
+
+.leaderboard-table th {
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.leaderboard-table th:first-child {
+    text-align: center;
+    width: 40px;
+}
+
+.leaderboard-table th:last-child {
+    text-align: right;
+}
+
+.leaderboard-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #333;
+}
+
+.leaderboard-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.leaderboard-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.rank {
+    text-align: center;
+    font-weight: 600;
+    color: #667eea;
+}
+
+.leaderboard-value {
+    text-align: right;
+    font-weight: 600;
+    color: #667eea;
 }

@@ -20,6 +20,7 @@ from rcon_service import rcon_service
 from cache_service import cache_service
 from db_service import db_service
 from ssh_service import ssh_service
+from stats_service import stats_service
 
 app = FastAPI(title="Minecraft Dashboard")
 
@@ -129,6 +130,33 @@ async def poll_minecraft_server():
         await asyncio.sleep(5)
 
 
+async def poll_stats():
+    """
+    Background task that refreshes Minecraft statistics every 5 minutes.
+
+    This runs continuously in the background and updates the stats cache with
+    player statistics from the Minecraft server's world directory (via SSH):
+    - Blocks mined (from stats files)
+    - Distance traveled (from stats files)
+
+    Stats update less frequently than online players since they only change
+    when players leave or the server saves.
+    """
+    # Wait 10 seconds on startup to let RCON polling establish first
+    await asyncio.sleep(10)
+    print("Stats polling task started - refreshing every 5 minutes")
+
+    while True:
+        try:
+            await stats_service.refresh_stats()
+            print("Stats refreshed: Blocks mined and distance traveled updated")
+        except Exception as e:
+            print(f"Stats polling error: {e}")
+
+        # Wait 5 minutes (300 seconds) before next refresh
+        await asyncio.sleep(300)
+
+
 @app.on_event("startup")
 async def startup_event():
     """
@@ -145,9 +173,10 @@ async def startup_event():
     await db_service.init_db()
     print("Database initialized")
 
-    # Create the background task and let it run independently
-    # We don't await it - it runs in the background forever
-    asyncio.create_task(poll_minecraft_server())
+    # Create the background tasks and let them run independently
+    # We don't await them - they run in the background forever
+    asyncio.create_task(poll_minecraft_server())  # RCON polling every 5 seconds
+    asyncio.create_task(poll_stats())  # Stats polling every 5 minutes
 
 
 # ============================================================================
@@ -256,6 +285,37 @@ async def get_today_stats():
         }
     """
     return await db_service.get_today_stats()
+
+
+@app.get("/api/leaderboards")
+async def get_leaderboards():
+    """
+    Get all leaderboard data (top 10 for each metric).
+
+    Combines:
+    - Total playtime from session database (all-time)
+    - Blocks destroyed from Minecraft stats files
+    - Distance traveled from Minecraft stats files
+
+    Returns:
+        {
+            "playtime": [
+                {"name": "Steve", "value": 7200, "formatted": "2h 0m"},
+                ...
+            ],
+            "blocks": [
+                {"name": "Alex", "value": 12345, "formatted": "12,345"},
+                ...
+            ],
+            "distance": [
+                {"name": "Steve", "value": 5000000, "formatted": "50.0 km"},
+                ...
+            ],
+            "last_updated": "2024-02-15T12:34:56Z",
+            "stale": false
+        }
+    """
+    return await stats_service.get_leaderboards()
 
 
 # Serve static files

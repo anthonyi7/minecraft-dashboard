@@ -12,6 +12,7 @@
     <div class="container">
         <header>
             <h1>MFF Server Dashboard</h1>
+            <p class="last-updated-header">Last updated: <span id="last-updated">Never</span></p>
         </header>
 
         <main class="dashboard">
@@ -64,11 +65,56 @@
                     </tbody>
                 </table>
             </div>
-        </main>
 
-        <footer>
-            <p>Last updated: <span id="last-updated">Never</span></p>
-        </footer>
+            <!-- Leaderboard Cards -->
+            <div class="card">
+                <h2>Total Playtime</h2>
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Player</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="playtime-leaderboard">
+                        <tr><td colspan="3" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Blocks Destroyed</h2>
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Player</th>
+                            <th>Blocks</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blocks-leaderboard">
+                        <tr><td colspan="3" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Distance Traveled</h2>
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Player</th>
+                            <th>Distance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="distance-leaderboard">
+                        <tr><td colspan="3" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
     </div>
 
     <script src="/static/app.js"></script>

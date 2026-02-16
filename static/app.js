@@ -127,10 +127,70 @@ function showTodayError() {
     tbody.innerHTML = '<tr><td colspan="3" class="error">Failed to load player activity</td></tr>';
 }
 
+async function fetchLeaderboards() {
+    try {
+        const response = await fetch(`${API_BASE}/leaderboards`);
+        const data = await response.json();
+        updateLeaderboards(data);
+    } catch (error) {
+        console.error('Failed to fetch leaderboards:', error);
+        showLeaderboardError();
+    }
+}
+
+function updateLeaderboards(data) {
+    updateLeaderboardTable('playtime-leaderboard', data.playtime);
+    updateLeaderboardTable('blocks-leaderboard', data.blocks);
+    updateLeaderboardTable('distance-leaderboard', data.distance);
+}
+
+function updateLeaderboardTable(tableBodyId, players) {
+    const tbody = document.getElementById(tableBodyId);
+    tbody.innerHTML = '';
+
+    if (!players || players.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="no-data">No data available</td></tr>';
+        return;
+    }
+
+    players.forEach((player, index) => {
+        const row = document.createElement('tr');
+
+        // Rank
+        const rankCell = document.createElement('td');
+        rankCell.textContent = index + 1;
+        rankCell.className = 'rank';
+        row.appendChild(rankCell);
+
+        // Player name
+        const nameCell = document.createElement('td');
+        nameCell.textContent = player.name;
+        nameCell.className = 'player-name';
+        row.appendChild(nameCell);
+
+        // Value (formatted)
+        const valueCell = document.createElement('td');
+        valueCell.textContent = player.formatted;
+        valueCell.className = 'leaderboard-value';
+        row.appendChild(valueCell);
+
+        tbody.appendChild(row);
+    });
+}
+
+function showLeaderboardError() {
+    ['playtime-leaderboard', 'blocks-leaderboard', 'distance-leaderboard'].forEach(id => {
+        const tbody = document.getElementById(id);
+        tbody.innerHTML = '<tr><td colspan="3" class="error">Failed to load</td></tr>';
+    });
+}
+
 // Fetch on page load
 fetchStatus();
 fetchTodayStats();
+fetchLeaderboards();
 
 // Auto-refresh every 5 seconds
 setInterval(fetchStatus, 5000);
 setInterval(fetchTodayStats, 5000);
+setInterval(fetchLeaderboards, 5000);

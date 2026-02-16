@@ -374,6 +374,52 @@ class DatabaseService:
                 "error": str(e)
             }
 
+    async def get_all_time_playtime(self) -> list[dict]:
+        """
+        Get all-time playtime leaderboard (top 10 players).
+
+        Returns:
+            [
+                {"name": "Steve", "total_seconds": 72000, "session_count": 50},
+                ...
+            ]
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_all_time_playtime_sync)
+
+    def _get_all_time_playtime_sync(self) -> list[dict]:
+        """Synchronous all-time playtime query."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT
+                    player_name,
+                    SUM(COALESCE(duration_seconds, 0)) as total_seconds,
+                    COUNT(*) as session_count
+                FROM player_sessions
+                WHERE duration_seconds IS NOT NULL
+                GROUP BY player_name
+                ORDER BY total_seconds DESC
+                LIMIT 10
+            """)
+
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    "name": row[0],
+                    "total_seconds": row[1],
+                    "session_count": row[2]
+                })
+
+            conn.close()
+            return results
+
+        except Exception as e:
+            print(f"ERROR: Failed to get all-time playtime: {e}")
+            return []
+
     def _format_duration(self, seconds: int) -> str:
         """
         Format duration in seconds to human-readable string.
