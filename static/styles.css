@@ -118,3 +118,112 @@ footer {
 #last-updated {
     font-weight: bold;
 }
+
+/* Today's Player Activity Card */
+.card-wide {
+    grid-column: 1 / -1;
+}
+
+.today-summary {
+    font-size: 0.95rem;
+    color: #666;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f9fafb;
+    border-radius: 5px;
+    text-align: center;
+}
+
+/* Player Activity Table */
+#player-activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#player-activity-table thead {
+    background: #f3f4f6;
+}
+
+#player-activity-table th {
+    text-align: left;
+    padding: 12px;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+#player-activity-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #333;
+}
+
+#player-activity-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+#player-activity-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.player-name {
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.playtime {
+    color: #667eea;
+    font-weight: 600;
+}
+
+/* Status Indicators */
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.status-indicator::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.status-indicator.online {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-indicator.online::before {
+    background: #10b981;
+}
+
+.status-indicator.offline {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.status-indicator.offline::before {
+    background: #9ca3af;
+}
+
+/* Table states */
+.loading,
+.no-data,
+.error {
+    text-align: center;
+    padding: 20px;
+    color: #9ca3af;
+    font-style: italic;
+}
+
+.error {
+    color: #ef4444;
+}

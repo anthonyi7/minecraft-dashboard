@@ -9,6 +9,7 @@ This is the backend server that:
 """
 
 import asyncio
+from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -17,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 # Import our services
 from rcon_service import rcon_service
 from cache_service import cache_service
+from db_service import db_service
+from ssh_service import ssh_service
 
 app = FastAPI(title="Minecraft Dashboard")
 
@@ -38,18 +41,23 @@ app.add_middleware(
 
 async def poll_minecraft_server():
     """
-    Background task that polls the Minecraft server every 10 seconds.
+    Background task that polls the Minecraft server every 5 seconds.
 
     This runs continuously in the background and updates the cache with
-    fresh data from RCON. This way:
+    fresh data from RCON. It also tracks player join/leave events and
+    records them to the SQLite database. This way:
     - API endpoints return instantly from cache (no RCON wait)
     - Multiple dashboards don't spam the server with RCON requests
     - Users see last known good data even if RCON temporarily fails
+    - Player sessions are tracked for historical analytics
 
-    The polling interval is 10 seconds - you can adjust this by changing
-    the asyncio.sleep(10) at the bottom.
+    The polling interval is 5 seconds - you can adjust this by changing
+    the asyncio.sleep(5) at the bottom.
     """
-    print("Background polling task started - polling RCON every 10 seconds")
+    print("Background polling task started - polling RCON every 5 seconds")
+
+    # Track previous player list for join/leave detection
+    previous_players = set()
 
     while True:
         try:
@@ -58,24 +66,51 @@ async def poll_minecraft_server():
             current_players = await rcon_service.get_online_players()
             max_players = await rcon_service.get_max_players()
 
-            # Update the cache with fresh data
+            # Get real performance metrics via SSH
+            metrics = await ssh_service.get_server_metrics()
+
+            # Session tracking - detect joins/leaves
+            current_set = set(current_players)
+            joined = current_set - previous_players
+            left = previous_players - current_set
+            now = datetime.now(timezone.utc)
+
+            # Record joins to database
+            for player in joined:
+                await db_service.record_join(player, now)
+
+            # Record leaves to database
+            for player in left:
+                await db_service.record_leave(player, now)
+
+            # Update previous state for next poll
+            previous_players = current_set
+
+            # Update the cache with fresh data (now with real metrics!)
             cache_service.update(
                 online=is_online,
                 players_current=current_players,
                 players_max=max_players,
-                # Performance metrics still mocked for now
-                tps=19.87,
-                memory_used_mb=2048,
-                memory_total_mb=4096,
+                tps=metrics["tps"],
+                memory_used_mb=metrics["memory_used_mb"],
+                memory_total_mb=metrics["memory_total_mb"],
+                cpu_percent=metrics["cpu_percent"],
+                disk_used_gb=metrics["disk_used_gb"],
+                disk_total_gb=metrics["disk_total_gb"],
                 error=None,  # No error if we got here
             )
 
+            # Enhanced logging
             status = "online" if is_online else "offline"
-            print(f"✅ Cache updated: Server {status}, {len(current_players)}/{max_players} players")
+            print(f"Cache updated: Server {status}, {len(current_players)}/{max_players} players")
+            if joined:
+                print(f"   Joined: {', '.join(joined)}")
+            if left:
+                print(f"   Left: {', '.join(left)}")
 
         except Exception as e:
-            # If RCON fails, update cache with error but keep old data
-            print(f"RCON polling error: {e}")
+            # If RCON/SSH fails, update cache with error but keep old data
+            print(f"Polling error: {e}")
             cache_service.update(
                 online=False,
                 players_current=[],
@@ -83,11 +118,14 @@ async def poll_minecraft_server():
                 tps=0.0,
                 memory_used_mb=0,
                 memory_total_mb=0,
+                cpu_percent=0.0,
+                disk_used_gb=0.0,
+                disk_total_gb=0.0,
                 error=str(e),
             )
 
-        # Wait 10 seconds before next poll
-        # You can adjust this interval if needed (e.g., 5 or 30 seconds)
+        # Wait 5 seconds before next poll
+        # You can adjust this interval if needed (e.g., 10 or 30 seconds)
         await asyncio.sleep(5)
 
 
@@ -96,13 +134,17 @@ async def startup_event():
     """
     Run when FastAPI application starts up.
 
-    This launches the background polling task that will run continuously
-    until the application shuts down.
+    This initializes the database and launches the background polling task
+    that will run continuously until the application shuts down.
 
     Note: on_event is deprecated in newer FastAPI versions in favor of
     lifespan events, but it still works fine and is simpler to understand.
     We can upgrade to the lifespan pattern later if needed.
     """
+    # Initialize database before starting polling
+    await db_service.init_db()
+    print("Database initialized")
+
     # Create the background task and let it run independently
     # We don't await it - it runs in the background forever
     asyncio.create_task(poll_minecraft_server())
@@ -180,6 +222,40 @@ async def status():
     """
     # Simply return cached data - instant response, no RCON wait!
     return cache_service.get()
+
+
+@app.get("/api/today")
+async def get_today_stats():
+    """
+    Get player activity for today (midnight Pacific time to now).
+
+    Returns player statistics including total playtime, session counts,
+    and currently online status for all players seen today.
+
+    Note: Timestamps are stored in UTC, but "today" is calculated based on
+    Pacific time (America/Los_Angeles) for display purposes.
+
+    Returns:
+        {
+            "date": "2024-02-15",
+            "timezone": "America/Los_Angeles (Pacific)",
+            "players": [
+                {
+                    "name": "Steve",
+                    "total_playtime_seconds": 7200,
+                    "total_playtime_formatted": "2h 0m",
+                    "session_count": 3,
+                    "currently_online": true
+                }
+            ],
+            "summary": {
+                "unique_players": 5,
+                "total_playtime_seconds": 18000,
+                "total_sessions": 12
+            }
+        }
+    """
+    return await db_service.get_today_stats()
 
 
 # Serve static files

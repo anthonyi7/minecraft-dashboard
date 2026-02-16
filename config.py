@@ -25,6 +25,16 @@ class Config:
     MC_RCON_PORT: int = int(os.getenv("MC_RCON_PORT", "25575"))
     MC_RCON_PASSWORD: str = os.getenv("MC_RCON_PASSWORD", "")
 
+    # Database configuration
+    DB_PATH: str = os.getenv("DB_PATH", "data/minecraft_dashboard.db")
+
+    # SSH configuration for remote metrics collection
+    SSH_HOST: str = os.getenv("SSH_HOST", "localhost")
+    SSH_PORT: int = int(os.getenv("SSH_PORT", "22"))
+    SSH_USER: str = os.getenv("SSH_USER", "ubuntu")
+    SSH_KEY_PATH: str = os.getenv("SSH_KEY_PATH", "~/.ssh/mc_dashboard_key")
+    MC_SERVER_DIR: str = os.getenv("MC_SERVER_DIR", "/home/ubuntu/minecraft")
+
     @classmethod
     def validate(cls) -> None:
         """

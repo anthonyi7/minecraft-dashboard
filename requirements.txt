@@ -2,3 +2,6 @@ fastapi==0.129.0
 uvicorn[standard]==0.40.0
 mcrcon==0.7.0
 python-dotenv==1.0.0
+tzdata==2024.1
+paramiko==3.4.0
+#python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000

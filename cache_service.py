@@ -35,6 +35,9 @@ class CacheService:
                 "tps": 0.0,
                 "memory_used_mb": 0,
                 "memory_total_mb": 0,
+                "cpu_percent": 0.0,
+                "disk_used_gb": 0.0,
+                "disk_total_gb": 0.0,
             },
             "last_updated": None,  # datetime of last successful update
             "last_error": None,  # error message if last poll failed
@@ -48,20 +51,26 @@ class CacheService:
         tps: float = 0.0,
         memory_used_mb: int = 0,
         memory_total_mb: int = 0,
+        cpu_percent: float = 0.0,
+        disk_used_gb: float = 0.0,
+        disk_total_gb: float = 0.0,
         error: Optional[str] = None,
     ) -> None:
         """
-        Update the cache with fresh data from RCON.
+        Update the cache with fresh data from RCON and SSH.
 
-        This is called by the background polling task every 10 seconds.
+        This is called by the background polling task every 5 seconds.
 
         Args:
             online: Whether server is reachable via RCON
             players_current: List of current player names
             players_max: Maximum players allowed
-            tps: Server TPS (ticks per second) - optional
-            memory_used_mb: Memory usage in MB - optional
-            memory_total_mb: Total memory in MB - optional
+            tps: Server TPS (ticks per second)
+            memory_used_mb: Memory usage in MB
+            memory_total_mb: Total memory in MB
+            cpu_percent: CPU usage percentage
+            disk_used_gb: Disk space used in GB
+            disk_total_gb: Total disk space in GB
             error: Error message if RCON failed, None if successful
         """
         self._cache["online"] = online
@@ -74,6 +83,9 @@ class CacheService:
             "tps": tps,
             "memory_used_mb": memory_used_mb,
             "memory_total_mb": memory_total_mb,
+            "cpu_percent": cpu_percent,
+            "disk_used_gb": disk_used_gb,
+            "disk_total_gb": disk_total_gb,
         }
         self._cache["last_updated"] = datetime.now(timezone.utc)
         self._cache["last_error"] = error
