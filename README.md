@@ -376,24 +376,23 @@ ERROR: SSH metrics collection failed: [Errno 2] No such file or directory: '~/.s
 
 ## Roadmap
 
-### ✅ Completed
+### Completed
 - [x] Real TPS, Memory, CPU, and Disk metrics via SSH
 - [x] SQLite database for player session history
 - [x] Player join/leave tracking
 - [x] Today's player activity dashboard
 - [x] Real-time online status indicators
 
-### 🚧 In Progress
+### In Progress
 - [ ] Docker containerization
 - [ ] Kubernetes deployment manifests with PVC for database
 - [ ] Kubernetes Secret for SSH key mounting
 
-### 📋 Planned
-- [ ] Historical graphs and analytics (weekly/monthly player activity)
+### Planned
+- [x] Historical graphs and analytics (weekly/monthly player activity)
 - [ ] Backup log monitoring via SSH
-- [ ] Multi-server support (track multiple Minecraft servers)
-- [ ] Player UUID tracking (requires Minecraft API integration)
-- [ ] Automatic cleanup of old session data
+- [x] Player UUID tracking (requires Minecraft API integration)
+- [x] Automatic cleanup of old session data
 - [ ] Server migration tools (for moving to new hardware/drives)
 
 ## Database Schema
