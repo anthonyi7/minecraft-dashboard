@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minecraft-dashboard-data
+  labels:
+    app: minecraft-dashboard
+spec:
+  accessModes:
+  - ReadWriteOnce  # SQLite only supports single-writer access
+  resources:
+    requests:
+      storage: 1Gi  # Adjust based on expected database size
+                     # 1Gi is more than enough for session tracking
+                     # Increase if you plan to store more data
+
+  # Optional: Specify storage class if your cluster has multiple options
+  # storageClassName: standard  # Use 'standard' for most cloud providers
+                                 # Use 'local-path' for k3s/k3d
+                                 # Use 'gp2' or 'gp3' for AWS EKS
+                                 # Use 'pd-standard' or 'pd-ssd' for GCP GKE
+                                 # Uncomment and adjust based on your cluster

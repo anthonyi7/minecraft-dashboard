@@ -11,7 +11,6 @@ This service provides a clean interface to:
 - (Future) Get server performance metrics
 """
 
-import asyncio
 from typing import Optional
 from mcrcon import MCRcon
 from config import config
@@ -50,17 +49,18 @@ class RCONService:
             response = await rcon.execute_command("list")
             # Returns: "There are 3 of a max of 20 players online: Steve, Alex, Herobrine"
         """
-        # Run the synchronous RCON call in a thread pool to avoid blocking
-        # FastAPI is async, but mcrcon is synchronous, so we use run_in_executor
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._execute_sync, command)
+        # Call synchronously - this is fine because RCON is only called from
+        # the background polling task, not from HTTP request handlers
+        # Using run_in_executor causes "signal only works in main thread" errors
+        # because mcrcon tries to set up signal handlers in __init__
+        return self._execute_sync(command)
 
     def _execute_sync(self, command: str) -> Optional[str]:
         """
-        Synchronous version of execute_command.
+        Synchronous RCON connection and command execution.
 
-        This does the actual RCON connection. It's called by execute_command()
-        in a separate thread so it doesn't block the async event loop.
+        This does the actual RCON connection. It's called from the background
+        polling task, so blocking here doesn't affect HTTP request handling.
 
         How it works:
         1. Opens TCP connection to server on RCON port
@@ -75,7 +75,7 @@ class RCONService:
                 response = mcr.command(command)
                 return response
         except Exception as e:
-            # If connection fails (server offline, wrong password, etc.), return None
+            # Log connection errors (server offline, auth failed, network issues, etc.)
             print(f"RCON error: {e}")
             return None
 

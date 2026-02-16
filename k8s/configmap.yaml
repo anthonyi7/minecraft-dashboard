@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minecraft-dashboard-config
+  labels:
+    app: minecraft-dashboard
+data:
+  # Minecraft RCON Configuration
+  MC_SERVER_HOST: "192.168.1.209"  # TODO: Replace with your Minecraft server IP
+  MC_RCON_PORT: "25575"
+
+  # Database Configuration
+  DB_PATH: "data/minecraft_dashboard.db"
+
+  # SSH Configuration
+  SSH_HOST: "192.168.1.209"  # TODO: Replace with your SSH host
+  SSH_PORT: "22"
+  SSH_USER: "ubuntu"  # TODO: Replace with your SSH username
+  SSH_KEY_PATH: "/home/appuser/.ssh/mc_dashboard_key"  # Container path (don't change)
+  MC_SERVER_DIR: "/home/ubuntu/minecraft"  # TODO: Replace with your Minecraft server directory

@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-dashboard
+  labels:
+    app: minecraft-dashboard
+spec:
+  replicas: 1 # SQLite can't be shared across multiple pods, so keep at 1
+  strategy:
+    type: Recreate # Don't run multiple pods simultaneously (SQLite limitation)
+  selector:
+    matchLabels:
+      app: minecraft-dashboard
+  template:
+    metadata:
+      labels:
+        app: minecraft-dashboard
+    spec:
+      # Security context for the pod - ensures volumes are accessible by appuser
+      securityContext:
+        fsGroup: 1000 # Ensures mounted volumes are readable by GID 1000 (appuser's group)
+        runAsUser: 1000
+        runAsNonRoot: true
+
+      containers:
+        - name: dashboard
+          image: fullstackant/minecraft-dashboard:latest # TODO: Replace with your DockerHub image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+
+          # Environment variables from ConfigMap and Secret
+          envFrom:
+            - configMapRef:
+                name: minecraft-dashboard-config
+            - secretRef:
+                name: minecraft-dashboard-secret
+
+          # Volume mounts
+          volumeMounts:
+            # Database persistence
+            - name: data
+              mountPath: /app/data
+
+            # SSH key from Secret
+            - name: ssh-key
+              mountPath: /home/appuser/.ssh/mc_dashboard_key
+              subPath: mc_dashboard_key
+              readOnly: true
+
+          # Resource limits and requests
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+
+      volumes:
+        # Persistent volume for SQLite database
+        - name: data
+          persistentVolumeClaim:
+            claimName: minecraft-dashboard-data
+
+        # SSH key from Secret
+        - name: ssh-key
+          secret:
+            secretName: minecraft-dashboard-ssh-key
+            defaultMode: 0400 # Read-only for user (Kubernetes secrets are read-only anyway)

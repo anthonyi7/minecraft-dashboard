@@ -153,6 +153,223 @@ Background polling task started - polling RCON every 5 seconds
 Cache updated: Server online, 0/20 players
 ```
 
+## Docker Deployment
+
+The dashboard is containerized and available as a Docker image for easy deployment.
+
+### Quick Docker Run
+
+```bash
+# Pull the latest image from DockerHub
+docker pull YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
+
+# Run with environment variables and volume mounts
+docker run -d \
+  --name minecraft-dashboard \
+  -p 8000:8000 \
+  -v $(pwd)/data:/app/data \
+  -v ~/.ssh/mc_dashboard_key:/home/appuser/.ssh/mc_dashboard_key:ro \
+  -e MC_SERVER_HOST=192.168.1.209 \
+  -e MC_RCON_PORT=25575 \
+  -e MC_RCON_PASSWORD=your_password \
+  -e SSH_HOST=192.168.1.209 \
+  -e SSH_USER=ubuntu \
+  -e MC_SERVER_DIR=/home/ubuntu/minecraft \
+  YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
+```
+
+### Building Your Own Image
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/anthonyi7/minecraft-dashboard.git
+cd minecraft-dashboard
+```
+
+2. **Build the Docker image**
+```bash
+docker build -t YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest .
+```
+
+3. **Push to DockerHub (optional)**
+```bash
+docker login
+docker push YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
+```
+
+## Kubernetes Deployment
+
+For production deployments, Kubernetes provides orchestration, auto-restart, and persistent storage.
+
+### Prerequisites
+
+- Kubernetes cluster (GKE, EKS, AKS, or local k3s/minikube)
+- `kubectl` configured to access your cluster
+- SSH private key for accessing Minecraft server
+
+### Quick Deploy with Kustomize
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/anthonyi7/minecraft-dashboard.git
+cd minecraft-dashboard
+```
+
+2. **Edit configuration**
+
+Update [k8s/configmap.yaml](k8s/configmap.yaml) with your server details:
+```yaml
+data:
+  MC_SERVER_HOST: "192.168.1.209"  # Your Minecraft server IP
+  MC_RCON_PORT: "25575"
+  SSH_HOST: "192.168.1.209"
+  SSH_USER: "ubuntu"
+  MC_SERVER_DIR: "/home/ubuntu/minecraft"
+```
+
+Update [k8s/deployment.yaml](k8s/deployment.yaml) with your DockerHub image:
+```yaml
+image: YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
+```
+
+3. **Create Kubernetes Secrets**
+
+```bash
+# Create SSH key secret from your private key file
+kubectl create secret generic minecraft-dashboard-ssh-key \
+  --from-file=mc_dashboard_key=$HOME/.ssh/mc_dashboard_key
+
+# Create RCON password secret
+kubectl create secret generic minecraft-dashboard-secret \
+  --from-literal=MC_RCON_PASSWORD='your_rcon_password_here'
+```
+
+4. **Deploy to Kubernetes**
+
+```bash
+# Using kubectl apply
+kubectl apply -f k8s/
+
+# Or using Kustomize
+kubectl apply -k k8s/
+```
+
+5. **Access the dashboard**
+
+```bash
+# Get the external IP (for LoadBalancer service)
+kubectl get service minecraft-dashboard
+
+# Or use port-forward for testing
+kubectl port-forward service/minecraft-dashboard 8000:80
+```
+
+Then open http://localhost:8000 in your browser.
+
+### Kubernetes Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│          Kubernetes Cluster                 │
+│                                             │
+│  ┌───────────────────────────────────────┐ │
+│  │   Service (LoadBalancer)              │ │
+│  │   External IP: x.x.x.x:80             │ │
+│  └──────────────┬────────────────────────┘ │
+│                 │                           │
+│  ┌──────────────▼────────────────────────┐ │
+│  │   Deployment (1 replica)              │ │
+│  │   - FastAPI container                 │ │
+│  │   - Resource limits: 512Mi / 500m CPU │ │
+│  │   - Health checks: /api/healthz       │ │
+│  └──┬────────────────────────────────┬───┘ │
+│     │                                │     │
+│  ┌──▼──────────────┐     ┌───────────▼──┐ │
+│  │ PVC (1Gi)       │     │ Secrets      │ │
+│  │ SQLite database │     │ - SSH key    │ │
+│  │ ReadWriteOnce   │     │ - RCON pass  │ │
+│  └─────────────────┘     └──────────────┘ │
+└─────────────────────────────────────────────┘
+```
+
+### Kubernetes Files Reference
+
+| File | Description |
+|------|-------------|
+| [k8s/deployment.yaml](k8s/deployment.yaml) | Main application deployment with resource limits and health checks |
+| [k8s/service.yaml](k8s/service.yaml) | LoadBalancer service exposing the dashboard on port 80 |
+| [k8s/pvc.yaml](k8s/pvc.yaml) | PersistentVolumeClaim for SQLite database (1Gi) |
+| [k8s/configmap.yaml](k8s/configmap.yaml) | Non-sensitive environment variables |
+| [k8s/secrets-example.yaml](k8s/secrets-example.yaml) | Template for creating secrets (DO NOT commit with real values!) |
+| [k8s/kustomization.yaml](k8s/kustomization.yaml) | Kustomize configuration for easy manifest management |
+
+### Production Best Practices
+
+**Security:**
+- ✅ SSH key mounted from Kubernetes Secret (never baked into image)
+- ✅ RCON password stored in Secret (not ConfigMap)
+- ✅ Container runs as non-root user (UID 1000)
+- ✅ Security context with dropped capabilities
+- ⚠️ Consider using [sealed-secrets](https://github.com/bitnami-labs/sealed-secrets) or [external-secrets](https://external-secrets.io/) for production
+
+**Persistence:**
+- ✅ SQLite database on PersistentVolume (survives pod restarts)
+- ⚠️ Backup PVC regularly (SQLite database contains all session history)
+- ⚠️ Consider using a managed database (PostgreSQL) for multi-replica deployments
+
+**Monitoring:**
+- ✅ Health checks configured (liveness and readiness probes)
+- ⚠️ Add Prometheus metrics for production monitoring
+- ⚠️ Set up alerts for pod restarts or health check failures
+
+**Scaling:**
+- ⚠️ SQLite limitation: Cannot scale beyond 1 replica (ReadWriteOnce PVC)
+- ⚠️ For high availability, migrate to PostgreSQL or MySQL and use ReadWriteMany storage
+
+### Updating the Deployment
+
+```bash
+# Build and push new image
+docker build -t YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:v1.0.1 .
+docker push YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:v1.0.1
+
+# Update deployment
+kubectl set image deployment/minecraft-dashboard \
+  dashboard=YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:v1.0.1
+
+# Or edit kustomization.yaml and reapply
+kubectl apply -k k8s/
+```
+
+### Troubleshooting Kubernetes
+
+```bash
+# Check pod status
+kubectl get pods -l app=minecraft-dashboard
+
+# View pod logs
+kubectl logs -l app=minecraft-dashboard --tail=100 -f
+
+# Describe pod (check events for errors)
+kubectl describe pod -l app=minecraft-dashboard
+
+# Check if secrets exist
+kubectl get secrets | grep minecraft-dashboard
+
+# Verify ConfigMap
+kubectl get configmap minecraft-dashboard-config -o yaml
+
+# Check PVC status
+kubectl get pvc minecraft-dashboard-data
+
+# Test SSH key is mounted correctly
+kubectl exec -it $(kubectl get pod -l app=minecraft-dashboard -o name) -- \
+  ls -la /home/appuser/.ssh/
+
+# Interactive shell for debugging
+kubectl exec -it $(kubectl get pod -l app=minecraft-dashboard -o name) -- /bin/bash
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -299,16 +516,26 @@ minecraft_dashboard/
 ├── rcon_service.py     # RCON communication with Minecraft server
 ├── db_service.py       # SQLite database for player session tracking
 ├── ssh_service.py      # SSH-based performance metrics collection
+├── stats_service.py    # Minecraft statistics collection (blocks, distance, playtime)
 ├── config.py           # Environment variable configuration
 ├── requirements.txt    # Python dependencies (FastAPI, mcrcon, paramiko, etc.)
 ├── .env                # Local config (git-ignored, contains secrets)
 ├── .env.example        # Template for .env file
 ├── .gitignore          # Git ignore rules
 ├── RCON_SETUP.md       # Guide to enable RCON on Minecraft server
+├── Dockerfile          # Multi-stage Docker build configuration
+├── .dockerignore       # Files to exclude from Docker build context
 ├── data/               # Auto-created directory for database (git-ignored)
 │   └── minecraft_dashboard.db  # SQLite database (player sessions)
+├── k8s/                # Kubernetes manifests
+│   ├── deployment.yaml      # K8s Deployment with health checks and resource limits
+│   ├── service.yaml         # K8s Service (LoadBalancer)
+│   ├── pvc.yaml             # PersistentVolumeClaim for SQLite database
+│   ├── configmap.yaml       # Non-sensitive environment variables
+│   ├── secrets-example.yaml # Template for creating Secrets (git-ignored)
+│   └── kustomization.yaml   # Kustomize configuration
 ├── static/
-│   ├── index.html      # Dashboard UI (server status, player activity table)
+│   ├── index.html      # Dashboard UI (server status, player activity table, leaderboards)
 │   ├── styles.css      # Styling (gradient theme, responsive tables)
 │   └── app.js          # Frontend JavaScript (API polling, UI updates)
 └── README.md           # This file
@@ -376,24 +603,27 @@ ERROR: SSH metrics collection failed: [Errno 2] No such file or directory: '~/.s
 
 ## Roadmap
 
-### Completed
+### ✅ Completed
 - [x] Real TPS, Memory, CPU, and Disk metrics via SSH
 - [x] SQLite database for player session history
 - [x] Player join/leave tracking
 - [x] Today's player activity dashboard
 - [x] Real-time online status indicators
+- [x] Leaderboards (Total Playtime, Blocks Destroyed, Distance Traveled)
+- [x] Player statistics from Minecraft stats files (blocks mined, distance traveled)
+- [x] Docker containerization with multi-stage builds
+- [x] Kubernetes deployment manifests with PVC for database
+- [x] Kubernetes Secret for SSH key mounting
+- [x] Player UUID tracking via usercache.json
+- [x] Production-ready container with health checks and security context
 
-### In Progress
-- [ ] Docker containerization
-- [ ] Kubernetes deployment manifests with PVC for database
-- [ ] Kubernetes Secret for SSH key mounting
-
-### Planned
-- [x] Historical graphs and analytics (weekly/monthly player activity)
+### 📋 Planned
 - [ ] Backup log monitoring via SSH
-- [x] Player UUID tracking (requires Minecraft API integration)
-- [x] Automatic cleanup of old session data
 - [ ] Server migration tools (for moving to new hardware/drives)
+- [ ] PostgreSQL/MySQL support for multi-replica deployments
+- [ ] Prometheus metrics endpoint for monitoring
+- [ ] Ingress configuration with TLS/HTTPS
+- [ ] Helm chart for easier Kubernetes deployments
 
 ## Database Schema
 

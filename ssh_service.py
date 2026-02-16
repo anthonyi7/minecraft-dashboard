@@ -13,11 +13,17 @@ Uses paramiko for SSH connections with key-based authentication.
 
 import asyncio
 import re
+import warnings
 from typing import Optional, Dict, Any
 import paramiko
 from pathlib import Path
 
 from config import config
+
+# Suppress cryptography deprecation warnings from paramiko
+# These are for legacy ciphers like TripleDES that are being phased out
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="paramiko")
+warnings.filterwarnings("ignore", message=".*TripleDES.*", category=DeprecationWarning)
 
 
 class SSHService:

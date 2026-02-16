@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Metadata
+namespace: default  # Change to your preferred namespace
+
+# Common labels applied to all resources
+commonLabels:
+  app: minecraft-dashboard
+  managed-by: kustomize
+
+# Resources to deploy
+resources:
+  - pvc.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+
+# Images - allows easy version updates
+images:
+  - name: YOUR_DOCKERHUB_USERNAME/minecraft-dashboard
+    newTag: latest  # Change to specific version tag for production (e.g., v1.0.0)
+
+# Optional: Generate secrets from files (alternative to kubectl create secret)
+# Uncomment and adjust paths as needed:
+# secretGenerator:
+#   - name: minecraft-dashboard-secret
+#     literals:
+#       - MC_RCON_PASSWORD=changeme  # Replace with real password
+#   - name: minecraft-dashboard-ssh-key
+#     files:
+#       - mc_dashboard_key=/path/to/ssh/key  # Replace with actual path
+
+# Optional: Resource name prefix (useful for multiple environments)
+# namePrefix: prod-
+
+# Optional: Resource name suffix
+# nameSuffix: -v1
