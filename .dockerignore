@@ -1,0 +1,65 @@
+# Git files
+.git
+.gitignore
+
+# Environment files (secrets should never be baked into images!)
+.env
+.env.*
+*.env
+
+# Database (will be mounted as volume)
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# SSH keys (will be mounted from K8s Secret)
+*.pem
+*.key
+id_rsa*
+.ssh/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation and non-essential files
+README.md
+RCON_SETUP.md
+.env.example
+LICENSE
+
+# Kubernetes manifests (not needed in image)
+k8s/
+*.yaml
+*.yml
+kustomization.yaml
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Testing and CI/CD
+.pytest_cache/
+*.coverage
+htmlcov/
+.github/
+
+# OS files
+.DS_Store
+Thumbs.db

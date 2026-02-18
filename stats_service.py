@@ -23,7 +23,6 @@ import paramiko
 from pathlib import Path
 
 from config import config
-from db_service import db_service
 
 
 class StatsService:
@@ -167,10 +166,12 @@ class StatsService:
             # Extract stats
             blocks_mined = self._parse_blocks_mined(stats_json)
             distance_cm = self._parse_distance_traveled(stats_json)
+            play_time_seconds = self._parse_play_time(stats_json)
 
             return {
                 "blocks_mined": blocks_mined,
-                "distance_cm": distance_cm
+                "distance_cm": distance_cm,
+                "play_time_seconds": play_time_seconds
             }
         except json.JSONDecodeError as e:
             raise Exception(f"Failed to parse stats JSON for {uuid}: {e}")
@@ -186,6 +187,24 @@ class StatsService:
         try:
             mined = stats_json.get("stats", {}).get("minecraft:mined", {})
             return sum(mined.values())
+        except (AttributeError, TypeError):
+            return 0
+
+    def _parse_play_time(self, stats_json: dict) -> int:
+        """
+        Get total playtime from Minecraft's built-in tracking.
+
+        Stored in ticks (20 ticks = 1 second).
+        Key: minecraft:play_time (1.17+) or minecraft:play_one_minute (older versions).
+
+        Returns:
+            Playtime in seconds
+        """
+        try:
+            custom = stats_json.get("stats", {}).get("minecraft:custom", {})
+            ticks = custom.get("minecraft:play_time",
+                               custom.get("minecraft:play_one_minute", 0))
+            return ticks // 20
         except (AttributeError, TypeError):
             return 0
 
@@ -211,9 +230,8 @@ class StatsService:
         """
         Get all leaderboard data (top 10 for each metric).
 
-        Combines:
-        - Total playtime from database (db_service)
-        - Blocks mined and distance from stats cache
+        All data sourced from Minecraft's own stats files (via SSH).
+        Uses minecraft:play_time stat for reliable playtime that persists across pod restarts.
 
         Returns:
             {
@@ -223,23 +241,18 @@ class StatsService:
                 "last_updated": str (ISO timestamp)
             }
         """
-        # Get playtime from database
-        playtime_data = await db_service.get_all_time_playtime()
-
-        # Format playtime leaderboard
+        # Get playtime, blocks, and distance from stats cache (all sourced from Minecraft's own files)
         playtime = []
-        for player in playtime_data:
-            playtime.append({
-                "name": player["name"],
-                "value": player["total_seconds"],
-                "formatted": self._format_playtime(player["total_seconds"])
-            })
-
-        # Get blocks and distance from stats cache
         blocks = []
         distance = []
 
         for player_name, stats in self._cache["player_stats"].items():
+            if stats.get("play_time_seconds", 0) > 0:
+                playtime.append({
+                    "name": player_name,
+                    "value": stats["play_time_seconds"],
+                    "formatted": self._format_playtime(stats["play_time_seconds"])
+                })
             blocks.append({
                 "name": player_name,
                 "value": stats["blocks_mined"],
@@ -252,9 +265,11 @@ class StatsService:
             })
 
         # Sort and limit to top 10
+        playtime.sort(key=lambda x: x["value"], reverse=True)
         blocks.sort(key=lambda x: x["value"], reverse=True)
         distance.sort(key=lambda x: x["value"], reverse=True)
 
+        playtime = playtime[:10]
         blocks = blocks[:10]
         distance = distance[:10]
 
