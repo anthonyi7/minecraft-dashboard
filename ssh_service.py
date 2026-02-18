@@ -91,6 +91,9 @@ class SSHService:
             # Try to get TPS from logs (may not be available)
             tps = self._get_tps_from_logs(ssh)
 
+            # Get server uptime
+            uptime_seconds = self._get_server_uptime(ssh)
+
             ssh.close()
 
             # Calculate memory percentage
@@ -104,7 +107,8 @@ class SSHService:
                 "disk_used_gb": round(disk_used_gb, 1),
                 "disk_total_gb": round(disk_total_gb, 1),
                 "disk_percent": round(disk_percent, 1),
-                "tps": round(tps, 2) if tps > 0 else 20.0  # Default to 20 if unavailable
+                "tps": round(tps, 2) if tps > 0 else 20.0,  # Default to 20 if unavailable
+                "uptime_seconds": uptime_seconds
             }
 
         except Exception as e:
@@ -118,7 +122,8 @@ class SSHService:
                 "disk_used_gb": 0.0,
                 "disk_total_gb": 0.0,
                 "disk_percent": 0.0,
-                "tps": 20.0
+                "tps": 20.0,
+                "uptime_seconds": 0
             }
 
     def _create_ssh_client(self) -> paramiko.SSHClient:
@@ -193,12 +198,12 @@ class SSHService:
 
     def _get_disk_usage(self, ssh: paramiko.SSHClient) -> tuple[float, float, float]:
         """
-        Get disk usage for the Minecraft server directory.
+        Get disk usage for the /mnt/storage mount.
 
         Returns:
             (used_gb, total_gb, percent) tuple
         """
-        cmd = f"df -BG {self.server_dir} | tail -1"
+        cmd = "df -BG /mnt/storage | tail -1"
         _, stdout, _ = ssh.exec_command(cmd)
         output = stdout.read().decode().strip()
 
@@ -244,6 +249,26 @@ class SSHService:
 
         # TPS not available in logs
         return 0.0
+
+    def _get_server_uptime(self, ssh: paramiko.SSHClient) -> int:
+        """
+        Get the server's uptime in seconds.
+
+        Returns:
+            Uptime in seconds, or 0 if unable to determine
+        """
+        # Get uptime using /proc/uptime (more accurate than 'uptime' command)
+        # Format: "12345.67 98765.43" (uptime_seconds idle_seconds)
+        _, stdout, _ = ssh.exec_command("cat /proc/uptime")
+        output = stdout.read().decode().strip()
+
+        if output:
+            # Take the first number (total uptime in seconds)
+            uptime_str = output.split()[0]
+            uptime_seconds = int(float(uptime_str))
+            return uptime_seconds
+
+        return 0
 
 
 # Global SSH service instance

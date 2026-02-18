@@ -39,6 +39,7 @@ COPY --chown=appuser:appuser app.py .
 COPY --chown=appuser:appuser cache_service.py .
 COPY --chown=appuser:appuser config.py .
 COPY --chown=appuser:appuser db_service.py .
+COPY --chown=appuser:appuser log_service.py .
 COPY --chown=appuser:appuser rcon_service.py .
 COPY --chown=appuser:appuser ssh_service.py .
 COPY --chown=appuser:appuser stats_service.py .

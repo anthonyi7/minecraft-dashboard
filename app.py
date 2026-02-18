@@ -9,7 +9,6 @@ This is the backend server that:
 """
 
 import asyncio
-from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -21,6 +20,7 @@ from cache_service import cache_service
 from db_service import db_service
 from ssh_service import ssh_service
 from stats_service import stats_service
+from log_service import log_service
 
 app = FastAPI(title="Minecraft Dashboard")
 
@@ -42,52 +42,18 @@ app.add_middleware(
 
 async def poll_minecraft_server():
     """
-    Background task that polls the Minecraft server every 5 seconds.
-
-    This runs continuously in the background and updates the cache with
-    fresh data from RCON. It also tracks player join/leave events and
-    records them to the SQLite database. This way:
-    - API endpoints return instantly from cache (no RCON wait)
-    - Multiple dashboards don't spam the server with RCON requests
-    - Users see last known good data even if RCON temporarily fails
-    - Player sessions are tracked for historical analytics
-
-    The polling interval is 5 seconds - you can adjust this by changing
-    the asyncio.sleep(5) at the bottom.
+    Background task: polls RCON + SSH every 5 seconds for server status/metrics.
+    Session tracking is handled separately by poll_logs().
     """
     print("Background polling task started - polling RCON every 5 seconds")
 
-    # Track previous player list for join/leave detection
-    previous_players = set()
-
     while True:
         try:
-            # Poll RCON for current server state
             is_online = await rcon_service.is_server_online()
             current_players = await rcon_service.get_online_players()
             max_players = await rcon_service.get_max_players()
-
-            # Get real performance metrics via SSH
             metrics = await ssh_service.get_server_metrics()
 
-            # Session tracking - detect joins/leaves
-            current_set = set(current_players)
-            joined = current_set - previous_players
-            left = previous_players - current_set
-            now = datetime.now(timezone.utc)
-
-            # Record joins to database
-            for player in joined:
-                await db_service.record_join(player, now)
-
-            # Record leaves to database
-            for player in left:
-                await db_service.record_leave(player, now)
-
-            # Update previous state for next poll
-            previous_players = current_set
-
-            # Update the cache with fresh data (now with real metrics!)
             cache_service.update(
                 online=is_online,
                 players_current=current_players,
@@ -98,19 +64,14 @@ async def poll_minecraft_server():
                 cpu_percent=metrics["cpu_percent"],
                 disk_used_gb=metrics["disk_used_gb"],
                 disk_total_gb=metrics["disk_total_gb"],
-                error=None,  # No error if we got here
+                uptime_seconds=metrics["uptime_seconds"],
+                error=None,
             )
 
-            # Enhanced logging
             status = "online" if is_online else "offline"
             print(f"Cache updated: Server {status}, {len(current_players)}/{max_players} players")
-            if joined:
-                print(f"   Joined: {', '.join(joined)}")
-            if left:
-                print(f"   Left: {', '.join(left)}")
 
         except Exception as e:
-            # If RCON/SSH fails, update cache with error but keep old data
             print(f"Polling error: {e}")
             cache_service.update(
                 online=False,
@@ -122,12 +83,27 @@ async def poll_minecraft_server():
                 cpu_percent=0.0,
                 disk_used_gb=0.0,
                 disk_total_gb=0.0,
+                uptime_seconds=0,
                 error=str(e),
             )
 
-        # Wait 5 seconds before next poll
-        # You can adjust this interval if needed (e.g., 10 or 30 seconds)
         await asyncio.sleep(5)
+
+
+async def poll_logs():
+    """
+    Background task: tails latest.log every 15 seconds for join/leave events.
+    On startup it reads the entire log to backfill today's events.
+    """
+    print("Log polling task started - tailing server logs every 15 seconds")
+
+    while True:
+        try:
+            await log_service.poll_logs()
+        except Exception as e:
+            print(f"Log polling error: {e}")
+
+        await asyncio.sleep(15)
 
 
 async def poll_stats():
@@ -169,14 +145,12 @@ async def startup_event():
     lifespan events, but it still works fine and is simpler to understand.
     We can upgrade to the lifespan pattern later if needed.
     """
-    # Initialize database before starting polling
     await db_service.init_db()
     print("Database initialized")
 
-    # Create the background tasks and let them run independently
-    # We don't await them - they run in the background forever
-    asyncio.create_task(poll_minecraft_server())  # RCON polling every 5 seconds
-    asyncio.create_task(poll_stats())  # Stats polling every 5 minutes
+    asyncio.create_task(poll_minecraft_server())  # RCON/SSH every 5s
+    asyncio.create_task(poll_logs())              # Log tailing every 15s
+    asyncio.create_task(poll_stats())             # Stats files every 5min
 
 
 # ============================================================================
@@ -316,6 +290,30 @@ async def get_leaderboards():
         }
     """
     return await stats_service.get_leaderboards()
+
+
+@app.get("/api/debug/events/{player_name}")
+async def debug_player_events(player_name: str):
+    """Debug: show raw join/leave events for a player."""
+    loop = asyncio.get_event_loop()
+
+    def query():
+        import sqlite3
+        conn = sqlite3.connect(db_service.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, player_name, event_type, event_time
+            FROM player_events
+            WHERE LOWER(player_name) = LOWER(?)
+            ORDER BY event_time DESC
+            LIMIT 100
+        """, (player_name,))
+        events = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"player_name": player_name, "event_count": len(events), "events": events}
+
+    return await loop.run_in_executor(None, query)
 
 
 # Serve static files

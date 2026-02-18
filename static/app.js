@@ -34,6 +34,9 @@ function updateUI(data) {
     statusEl.textContent = data.online ? 'Online' : 'Offline';
     statusEl.className = data.online ? 'status status-online' : 'status status-offline';
 
+    // Update uptime
+    document.getElementById('uptime').textContent = formatUptime(data.uptime_seconds);
+
     // Update player count and list
     document.getElementById('player-count').textContent =
         `${data.players.count} / ${data.players.max} players`;
@@ -115,6 +118,22 @@ function formatTotalTime(seconds) {
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
     return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+}
+
+function formatUptime(seconds) {
+    if (!seconds || seconds === 0) return '--';
+
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+        return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    } else {
+        return `${minutes}m`;
+    }
 }
 
 function showError() {

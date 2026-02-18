@@ -39,6 +39,7 @@ class CacheService:
                 "disk_used_gb": 0.0,
                 "disk_total_gb": 0.0,
             },
+            "uptime_seconds": 0,
             "last_updated": None,  # datetime of last successful update
             "last_error": None,  # error message if last poll failed
         }
@@ -54,6 +55,7 @@ class CacheService:
         cpu_percent: float = 0.0,
         disk_used_gb: float = 0.0,
         disk_total_gb: float = 0.0,
+        uptime_seconds: int = 0,
         error: Optional[str] = None,
     ) -> None:
         """
@@ -71,6 +73,7 @@ class CacheService:
             cpu_percent: CPU usage percentage
             disk_used_gb: Disk space used in GB
             disk_total_gb: Total disk space in GB
+            uptime_seconds: Server uptime in seconds
             error: Error message if RCON failed, None if successful
         """
         self._cache["online"] = online
@@ -87,6 +90,7 @@ class CacheService:
             "disk_used_gb": disk_used_gb,
             "disk_total_gb": disk_total_gb,
         }
+        self._cache["uptime_seconds"] = uptime_seconds
         self._cache["last_updated"] = datetime.now(timezone.utc)
         self._cache["last_error"] = error
 
