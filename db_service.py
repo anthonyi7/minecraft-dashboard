@@ -15,7 +15,7 @@ Schema:
 import asyncio
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from config import config
@@ -126,9 +126,11 @@ class DatabaseService:
             cursor = conn.cursor()
 
             # For each join today, find the next leave (or use NOW if still online).
-            # julianday arithmetic gives fractional days; multiply by 86400 for seconds.
+            # Also picks up carryover sessions: players who were online at midnight
+            # get credit from midnight onward (e.g. played 11 PM - 2 AM → 2h in today).
             cursor.execute("""
                 WITH sessions AS (
+                    -- Normal: sessions that started today
                     SELECT
                         j.player_name,
                         j.event_time AS joined_at,
@@ -143,6 +145,32 @@ class DatabaseService:
                     FROM player_events j
                     WHERE j.event_type = 'join'
                       AND j.event_time >= ?
+
+                    UNION ALL
+
+                    -- Carryover: players whose most recent event before midnight was a join
+                    -- (they were still online when the day rolled over)
+                    SELECT
+                        p.player_name,
+                        ? AS joined_at,
+                        COALESCE(
+                            (SELECT MIN(l.event_time)
+                             FROM player_events l
+                             WHERE l.player_name = p.player_name
+                               AND l.event_type  = 'leave'
+                               AND l.event_time  > ?),
+                            strftime('%Y-%m-%dT%H:%M:%S', 'now')
+                        ) AS left_at
+                    FROM (
+                        SELECT player_name
+                        FROM player_events
+                        WHERE id IN (
+                            SELECT MAX(id) FROM player_events
+                            WHERE event_time < ?
+                            GROUP BY player_name
+                        )
+                        AND event_type = 'join'
+                    ) p
                 )
                 SELECT
                     player_name,
@@ -153,7 +181,12 @@ class DatabaseService:
                 FROM sessions
                 GROUP BY player_name
                 ORDER BY total_seconds DESC
-            """, (midnight_utc.isoformat(),))
+            """, (
+                midnight_utc.isoformat(),  # join >= midnight (normal sessions)
+                midnight_utc.isoformat(),  # joined_at = midnight (carryover clip)
+                midnight_utc.isoformat(),  # leave > midnight (carryover left_at)
+                midnight_utc.isoformat(),  # event_time < midnight (find online-at-midnight players)
+            ))
 
             rows = cursor.fetchall()
 
@@ -203,6 +236,115 @@ class DatabaseService:
             today_pacific = datetime.now(pacific_tz).date()
             return {
                 "date": today_pacific.isoformat(),
+                "timezone": "America/Los_Angeles (Pacific)",
+                "players": [],
+                "summary": {"unique_players": 0, "total_playtime_seconds": 0, "total_sessions": 0},
+                "error": str(e),
+            }
+
+    async def get_yesterday_stats(self) -> dict:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_yesterday_stats_sync)
+
+    def _get_yesterday_stats_sync(self) -> dict:
+        """
+        Derive yesterday's playtime from events.
+
+        Queries from yesterday's midnight to today's midnight (Pacific).
+        Sessions that ran past midnight are capped at today's midnight.
+        """
+        try:
+            pacific_tz = ZoneInfo("America/Los_Angeles")
+            now_pacific = datetime.now(pacific_tz)
+            today_pacific = now_pacific.date()
+            yesterday_pacific = today_pacific - timedelta(days=1)
+
+            yesterday_midnight_pacific = datetime.combine(
+                yesterday_pacific, datetime.min.time()
+            ).replace(tzinfo=pacific_tz)
+            today_midnight_pacific = datetime.combine(
+                today_pacific, datetime.min.time()
+            ).replace(tzinfo=pacific_tz)
+
+            yesterday_midnight_utc = yesterday_midnight_pacific.astimezone(timezone.utc)
+            today_midnight_utc = today_midnight_pacific.astimezone(timezone.utc)
+
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # For each join yesterday, find the next leave up to today's midnight.
+            # Sessions that ran past midnight are capped at today's midnight.
+            cursor.execute("""
+                WITH sessions AS (
+                    SELECT
+                        j.player_name,
+                        j.event_time AS joined_at,
+                        COALESCE(
+                            (SELECT MIN(l.event_time)
+                             FROM player_events l
+                             WHERE l.player_name = j.player_name
+                               AND l.event_type  = 'leave'
+                               AND l.event_time  > j.event_time
+                               AND l.event_time  <= ?),
+                            ?
+                        ) AS left_at
+                    FROM player_events j
+                    WHERE j.event_type = 'join'
+                      AND j.event_time >= ?
+                      AND j.event_time < ?
+                )
+                SELECT
+                    player_name,
+                    COUNT(*) AS session_count,
+                    CAST(SUM(
+                        (julianday(left_at) - julianday(joined_at)) * 86400
+                    ) AS INTEGER) AS total_seconds
+                FROM sessions
+                GROUP BY player_name
+                ORDER BY total_seconds DESC
+            """, (
+                today_midnight_utc.isoformat(),   # leave cap
+                today_midnight_utc.isoformat(),   # COALESCE fallback
+                yesterday_midnight_utc.isoformat(),  # join window start
+                today_midnight_utc.isoformat(),      # join window end
+            ))
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            players = []
+            total_playtime = 0
+            total_sessions = 0
+
+            for row in rows:
+                seconds = row["total_seconds"] or 0
+                total_playtime += seconds
+                total_sessions += row["session_count"]
+                players.append({
+                    "name": row["player_name"],
+                    "total_playtime_seconds": seconds,
+                    "total_playtime_formatted": self._format_duration(seconds),
+                    "session_count": row["session_count"],
+                })
+
+            return {
+                "date": yesterday_pacific.isoformat(),
+                "timezone": "America/Los_Angeles (Pacific)",
+                "players": players,
+                "summary": {
+                    "unique_players": len(players),
+                    "total_playtime_seconds": total_playtime,
+                    "total_sessions": total_sessions,
+                },
+            }
+
+        except Exception as e:
+            print(f"ERROR: Failed to get yesterday stats: {e}")
+            pacific_tz = ZoneInfo("America/Los_Angeles")
+            yesterday_pacific = (datetime.now(pacific_tz).date() - timedelta(days=1))
+            return {
+                "date": yesterday_pacific.isoformat(),
                 "timezone": "America/Los_Angeles (Pacific)",
                 "players": [],
                 "summary": {"unique_players": 0, "total_playtime_seconds": 0, "total_sessions": 0},

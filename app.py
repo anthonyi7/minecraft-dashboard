@@ -261,6 +261,12 @@ async def get_today_stats():
     return await db_service.get_today_stats()
 
 
+@app.get("/api/yesterday")
+async def get_yesterday_stats():
+    """Get player activity for yesterday (midnight-to-midnight Pacific)."""
+    return await db_service.get_yesterday_stats()
+
+
 @app.get("/api/leaderboards")
 async def get_leaderboards():
     """

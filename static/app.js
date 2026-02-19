@@ -146,6 +146,54 @@ function showTodayError() {
     tbody.innerHTML = '<tr><td colspan="3" class="error">Failed to load player activity</td></tr>';
 }
 
+async function fetchYesterdayStats() {
+    try {
+        const response = await fetch(`${API_BASE}/yesterday`);
+        const data = await response.json();
+        updateYesterdayUI(data);
+    } catch (error) {
+        console.error('Failed to fetch yesterday stats:', error);
+        showYesterdayError();
+    }
+}
+
+function updateYesterdayUI(data) {
+    const summaryEl = document.getElementById('yesterday-summary');
+    summaryEl.textContent = `${data.summary.unique_players} players seen • ${formatTotalTime(data.summary.total_playtime_seconds)} total playtime • ${data.summary.total_sessions} sessions`;
+    summaryEl.className = 'today-summary';
+
+    const tbody = document.getElementById('yesterday-activity-body');
+    tbody.innerHTML = '';
+
+    if (data.players.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="2" class="no-data">No player activity yesterday</td>';
+        tbody.appendChild(row);
+        return;
+    }
+
+    data.players.forEach(player => {
+        const row = document.createElement('tr');
+
+        const nameCell = document.createElement('td');
+        nameCell.textContent = player.name;
+        nameCell.className = 'player-name';
+        row.appendChild(nameCell);
+
+        const timeCell = document.createElement('td');
+        timeCell.textContent = player.total_playtime_formatted;
+        timeCell.className = 'playtime';
+        row.appendChild(timeCell);
+
+        tbody.appendChild(row);
+    });
+}
+
+function showYesterdayError() {
+    const tbody = document.getElementById('yesterday-activity-body');
+    tbody.innerHTML = '<tr><td colspan="2" class="error">Failed to load player activity</td></tr>';
+}
+
 async function fetchLeaderboards() {
     try {
         const response = await fetch(`${API_BASE}/leaderboards`);
@@ -207,9 +255,11 @@ function showLeaderboardError() {
 // Fetch on page load
 fetchStatus();
 fetchTodayStats();
+fetchYesterdayStats();
 fetchLeaderboards();
 
 // Auto-refresh every 5 seconds
 setInterval(fetchStatus, 5000);
 setInterval(fetchTodayStats, 5000);
+setInterval(fetchYesterdayStats, 30000);  // Yesterday data changes rarely
 setInterval(fetchLeaderboards, 5000);

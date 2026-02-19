@@ -29,9 +29,15 @@ header h1 {
 
 .dashboard {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
     margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
 }
 
 .card {
@@ -117,6 +123,53 @@ footer {
 
 #last-updated {
     font-weight: bold;
+}
+
+/* Yesterday + Today side-by-side panels */
+.activity-panels {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 700px) {
+    .activity-panels {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Yesterday's Player Activity Table */
+#yesterday-activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#yesterday-activity-table thead {
+    background: #f3f4f6;
+}
+
+#yesterday-activity-table th {
+    text-align: left;
+    padding: 12px;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+#yesterday-activity-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #333;
+}
+
+#yesterday-activity-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+#yesterday-activity-table tbody tr:last-child td {
+    border-bottom: none;
 }
 
 /* Today's Player Activity Card */
