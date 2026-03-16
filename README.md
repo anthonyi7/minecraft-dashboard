@@ -1,6 +1,8 @@
 # Minecraft Dashboard
 
 A real-time web dashboard for monitoring your Minecraft server with RCON integration, SSH-based performance metrics, and SQLite persistence for player session tracking.
+Disclaimer: Portions of this dashboard have been created using Claude. This project serves as an experiment for Claude integration with my knowledge of Python and containerized applications.
+
 
 ![Status](https://img.shields.io/badge/status-active-success)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
