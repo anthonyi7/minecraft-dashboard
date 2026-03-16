@@ -1,7 +1,9 @@
 # Minecraft Dashboard
 
 A real-time web dashboard for monitoring your Minecraft server with RCON integration, SSH-based performance metrics, and SQLite persistence for player session tracking.
-Disclaimer: Portions of this dashboard have been created using Claude. This project serves as an experiment for Claude integration with my knowledge of Python and containerized applications.
+
+
+**Disclaimer: Portions of this dashboard have been created using Claude. This project serves as an experiment for Claude integration with my knowledge of Python and containerized applications.**
 
 
 ![Status](https://img.shields.io/badge/status-active-success)
@@ -159,27 +161,6 @@ Cache updated: Server online, 0/20 players
 
 The dashboard is containerized and available as a Docker image for easy deployment.
 
-### Quick Docker Run
-
-```bash
-# Pull the latest image from DockerHub
-docker pull YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
-
-# Run with environment variables and volume mounts
-docker run -d \
-  --name minecraft-dashboard \
-  -p 8000:8000 \
-  -v $(pwd)/data:/app/data \
-  -v ~/.ssh/mc_dashboard_key:/home/appuser/.ssh/mc_dashboard_key:ro \
-  -e MC_SERVER_HOST=192.168.1.209 \
-  -e MC_RCON_PORT=25575 \
-  -e MC_RCON_PASSWORD=your_password \
-  -e SSH_HOST=192.168.1.209 \
-  -e SSH_USER=ubuntu \
-  -e MC_SERVER_DIR=/home/ubuntu/minecraft \
-  YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
-```
-
 ### Building Your Own Image
 
 1. **Clone the repository**
@@ -308,25 +289,25 @@ Then open http://localhost:8000 in your browser.
 ### Production Best Practices
 
 **Security:**
-- ✅ SSH key mounted from Kubernetes Secret (never baked into image)
-- ✅ RCON password stored in Secret (not ConfigMap)
-- ✅ Container runs as non-root user (UID 1000)
-- ✅ Security context with dropped capabilities
-- ⚠️ Consider using [sealed-secrets](https://github.com/bitnami-labs/sealed-secrets) or [external-secrets](https://external-secrets.io/) for production
+ SSH key mounted from Kubernetes Secret (never baked into image)
+RCON password stored in Secret (not ConfigMap)
+Container runs as non-root user (UID 1000)
+ Security context with dropped capabilities
+Consider using [sealed-secrets](https://github.com/bitnami-labs/sealed-secrets) or [external-secrets](https://external-secrets.io/) for production
 
 **Persistence:**
-- ✅ SQLite database on PersistentVolume (survives pod restarts)
-- ⚠️ Backup PVC regularly (SQLite database contains all session history)
-- ⚠️ Consider using a managed database (PostgreSQL) for multi-replica deployments
+SQLite database on PersistentVolume (survives pod restarts)
+ Backup PVC regularly (SQLite database contains all session history)
+Consider using a managed database (PostgreSQL) for multi-replica deployments
 
 **Monitoring:**
-- ✅ Health checks configured (liveness and readiness probes)
-- ⚠️ Add Prometheus metrics for production monitoring
-- ⚠️ Set up alerts for pod restarts or health check failures
+Health checks configured (liveness and readiness probes)
+Add Prometheus metrics for production monitoring
+Set up alerts for pod restarts or health check failures
 
 **Scaling:**
-- ⚠️ SQLite limitation: Cannot scale beyond 1 replica (ReadWriteOnce PVC)
-- ⚠️ For high availability, migrate to PostgreSQL or MySQL and use ReadWriteMany storage
+SQLite limitation: Cannot scale beyond 1 replica (ReadWriteOnce PVC)
+For high availability, migrate to PostgreSQL or MySQL and use ReadWriteMany storage
 
 ### Updating the Deployment
 
@@ -343,34 +324,7 @@ kubectl set image deployment/minecraft-dashboard \
 kubectl apply -k k8s/
 ```
 
-### Troubleshooting Kubernetes
 
-```bash
-# Check pod status
-kubectl get pods -l app=minecraft-dashboard
-
-# View pod logs
-kubectl logs -l app=minecraft-dashboard --tail=100 -f
-
-# Describe pod (check events for errors)
-kubectl describe pod -l app=minecraft-dashboard
-
-# Check if secrets exist
-kubectl get secrets | grep minecraft-dashboard
-
-# Verify ConfigMap
-kubectl get configmap minecraft-dashboard-config -o yaml
-
-# Check PVC status
-kubectl get pvc minecraft-dashboard-data
-
-# Test SSH key is mounted correctly
-kubectl exec -it $(kubectl get pod -l app=minecraft-dashboard -o name) -- \
-  ls -la /home/appuser/.ssh/
-
-# Interactive shell for debugging
-kubectl exec -it $(kubectl get pod -l app=minecraft-dashboard -o name) -- /bin/bash
-```
 
 ## Configuration
 
@@ -543,89 +497,7 @@ minecraft_dashboard/
 └── README.md           # This file
 ```
 
-## Troubleshooting
 
-### RCON Issues
-
-#### "Connection refused" or "getaddrinfo failed"
-- Verify `MC_SERVER_HOST` is correct in `.env`
-- Check that RCON is enabled in `server.properties`
-- Ensure firewall allows connection on RCON port (default 25575)
-
-#### "Authentication failed"
-- `MC_RCON_PASSWORD` in `.env` must exactly match `rcon.password` in `server.properties`
-- Restart Minecraft server after changing RCON settings
-
-#### Dashboard shows "stale: true"
-- RCON polling is failing - check console logs for error messages
-- Verify Minecraft server is online and reachable
-
-### SSH Issues
-
-#### "No such file or directory" (SSH key not found)
-```
-ERROR: SSH metrics collection failed: [Errno 2] No such file or directory: '~/.ssh/mc_dashboard_key'
-```
-- Generate SSH key: `ssh-keygen -t rsa -b 4096 -f ~/.ssh/mc_dashboard_key -N ""`
-- Copy to server: `ssh-copy-id -i ~/.ssh/mc_dashboard_key.pub ubuntu@192.168.1.209`
-- Test: `ssh -i ~/.ssh/mc_dashboard_key ubuntu@192.168.1.209 "uptime"`
-
-#### "Permission denied (publickey)"
-- Verify SSH key is added to server's `~/.ssh/authorized_keys`
-- Check `SSH_USER` matches the username on the server
-- Ensure SSH key file has correct permissions: `chmod 600 ~/.ssh/mc_dashboard_key`
-
-#### Performance metrics show 0.0 or fallback values
-- SSH connection is failing - check console logs for SSH errors
-- Verify Minecraft server is running: `ps aux | grep java`
-- Check server directory path: `SSH_MC_SERVER_DIR` must be correct
-
-### Database Issues
-
-#### "Database initialization failed"
-- Check write permissions for `data/` directory
-- Verify disk space is available
-- SQLite database will be created automatically on first run
-
-#### Orphaned sessions after crash
-- Normal behavior - the dashboard closes orphaned sessions (left_at=NULL) on startup
-- These are set to 0 duration since we don't know when players actually left
-
-### Windows-Specific Issues
-
-#### SSH key path with backslashes
-- Use forward slashes or raw strings in `.env`:
-  ```
-  SSH_KEY_PATH=C:/Users/Anthony/.ssh/mc_dashboard_key
-  ```
-- Or use `~` expansion (recommended):
-  ```
-  SSH_KEY_PATH=~/.ssh/mc_dashboard_key
-  ```
-
-## Roadmap
-
-### ✅ Completed
-- [x] Real TPS, Memory, CPU, and Disk metrics via SSH
-- [x] SQLite database for player session history
-- [x] Player join/leave tracking
-- [x] Today's player activity dashboard
-- [x] Real-time online status indicators
-- [x] Leaderboards (Total Playtime, Blocks Destroyed, Distance Traveled)
-- [x] Player statistics from Minecraft stats files (blocks mined, distance traveled)
-- [x] Docker containerization with multi-stage builds
-- [x] Kubernetes deployment manifests with PVC for database
-- [x] Kubernetes Secret for SSH key mounting
-- [x] Player UUID tracking via usercache.json
-- [x] Production-ready container with health checks and security context
-
-### 📋 Planned
-- [ ] Backup log monitoring via SSH
-- [ ] Server migration tools (for moving to new hardware/drives)
-- [ ] PostgreSQL/MySQL support for multi-replica deployments
-- [ ] Prometheus metrics endpoint for monitoring
-- [ ] Ingress configuration with TLS/HTTPS
-- [ ] Helm chart for easier Kubernetes deployments
 
 ## Database Schema
 
@@ -715,3 +587,4 @@ MIT
 ---
 
 Built using FastAPI, RCON, and modern web technologies.
+
