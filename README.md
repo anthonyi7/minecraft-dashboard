@@ -1,6 +1,6 @@
 # Minecraft Dashboard
 
-A real-time web dashboard for monitoring your Minecraft server with RCON integration, SSH-based performance metrics, and SQLite persistence for player session tracking.
+A web dashboard for monitoring your Minecraft server with RCON integration, SSH-based performance metrics, and SQLite persistence for player session tracking.
 
 
 **Disclaimer: Portions of this dashboard have been created using Claude. This project serves as an experiment for Claude integration with my knowledge of Python and containerized applications.**
@@ -21,66 +21,65 @@ A real-time web dashboard for monitoring your Minecraft server with RCON integra
 - **Efficient Polling** - Polls RCON and SSH every 5 seconds
 - **Instant API Responses** - Sub-millisecond response times from in-memory cache
 - **Resilient** - Shows last known good data if RCON/SSH temporarily fails
-- **Scalable** - Multiple dashboards share the same cache (minimal server load)
 
 ### Player Session Tracking
 - **SQLite Persistence** - Stores player join/leave events with session durations
 - **Today's Activity** - View all players who joined today with total playtime
+- **Yesterday's Activity** - Previous day's session summary
 - **Historical Data** - Session data persists across dashboard restarts
-- **Real-time Status** - Shows which players are currently online
 
 ### User Interface
 - **Auto-refresh** - Dashboard updates every 5 seconds automatically
 - **Responsive Design** - Clean, modern interface with gradient theme
-- **Activity Table** - Sortable player activity with online status indicators
+- **Leaderboards** - Total Playtime, Blocks Destroyed, Distance Traveled
 
 ## Architecture
 
+The dashboard is split into two tiers to avoid exposing RCON/SSH credentials publicly.
+
 ```
-┌────────────────────────────────────────────────┐
-│             FastAPI App                        │
-│                                                │
-│  ┌──────────────────────────────────────────┐ │
-│  │       Background Polling Task            │ │
-│  │      (every 5 seconds)                   │ │
-│  └───┬──────────────────────────────┬───────┘ │
-│      │                              │         │
-│      ▼                              ▼         │
-│  ┌─────────┐                   ┌─────────┐   │
-│  │  RCON   │                   │   SSH   │   │──SSH──> Minecraft Server Host
-│  │ Service │                   │ Service │   │          (192.168.x.x:22)
-│  └────┬────┘                   └────┬────┘   │          - CPU usage
-│       │                             │         │          - Memory usage
-│       │    ┌────────────────┐       │         │          - Disk usage
-│       └───>│  Cache Service │<──────┘         │          - TPS (if available)
-│            └────────┬───────┘                 │
-│                 │   │                         │
-│      ┌──────────┘   └────────────┐            │
-│      ▼                           ▼            │
-│  ┌─────────┐              ┌────────────┐     │
-│  │Database │              │    API     │◄────┼─── Dashboard (Browser)
-│  │ Service │              │ Endpoints  │     │     - Server Status
-│  │(SQLite) │              └────────────┘     │     - Player Activity
-│  └─────────┘                                 │     - Performance Metrics
-│      │                                       │
-│      ▼                                       │
-│  data/minecraft_dashboard.db                 │
-│  (Player Sessions)                           │
-└────────────────────────────────────────────────┘
-        │
-        │──RCON──> Minecraft Server
-        │           (192.168.x.x:25575)
-        │           - Online status
-        │           - Player list
-        │           - Max players
+┌──────────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                        │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  secure-minecraft-dashboard (FastAPI, internal only)   │  │
+│  │                                                        │  │
+│  │  ┌─────────────┐   ┌─────────────┐   ┌────────────┐  │  │
+│  │  │ RCON Service│   │ SSH Service │   │  DB Service│  │  │
+│  │  └──────┬──────┘   └──────┬──────┘   └─────┬──────┘  │  │
+│  │         └────────────┬────┘                │          │  │
+│  │                      ▼                     ▼          │  │
+│  │               ┌─────────────┐      ┌──────────────┐  │  │
+│  │               │    Cache    │      │   SQLite PVC │  │  │
+│  │               └──────┬──────┘      └──────────────┘  │  │
+│  │                      │  /api/*                        │  │
+│  └──────────────────────┼────────────────────────────────┘  │
+│                         │                                    │
+│  ┌──────────────────────▼──────┐   ┌──────────────────────┐ │
+│  │  snapshot-writer (CronJob)  │   │  db-backup (CronJob) │ │
+│  │  runs every 1 minute        │   │  runs daily at 3 AM  │ │
+│  │  writes snapshot.json → PVC │   │  SCPs db → MC server │ │
+│  └──────────────────────┬──────┘   └──────────────────────┘ │
+│                         │                                    │
+│  ┌──────────────────────▼────────────────────────────────┐  │
+│  │  minecraft-dashboard (nginx, public)                   │  │
+│  │  serves index.html + snapshot.json from PVC            │  │
+│  └──────────────────────┬──────────────────────────────── ┘  │
+│                         │                                    │
+│  ┌──────────────────────▼──────────────┐                    │
+│  │  Ingress (ingress-nginx + MetalLB)  │                    │
+│  │  status.mff-server.com (HTTPS)      │                    │
+│  └─────────────────────────────────────┘                    │
+└──────────────────────────────────────────────────────────────┘
+         │ RCON (port 25576)           │ SSH (port 22)
+         ▼                             ▼
+   Minecraft Server (192.168.1.x)
 ```
 
-**Benefits:**
-- Only **12 RCON calls/min** regardless of how many users view the dashboard
-- API responses return instantly from memory (<5ms) instead of waiting for RCON/SSH (50-200ms)
-- Graceful degradation if Minecraft server goes offline
-- Player session data persists across restarts
-- Real performance metrics from the host system (not mocked)
+**Why two tiers?**
+- The secure backend is cluster-internal only — RCON and SSH credentials never leave the cluster
+- The public nginx pod serves a static snapshot refreshed every minute — safe to expose without auth
+- Only 12 RCON calls/min regardless of how many users view the dashboard
 
 ## Quick Start
 
@@ -112,31 +111,31 @@ cp .env.example .env
 Edit `.env` with your server details:
 ```bash
 # Minecraft RCON Configuration
-MC_SERVER_HOST=192.168.1.209           # Your server IP or hostname
-MC_RCON_PORT=25575                     # RCON port (default 25575)
+MC_SERVER_HOST=192.168.1.x             # Your Minecraft server IP
+MC_RCON_PORT=25576                     # RCON port (check your server.properties)
 MC_RCON_PASSWORD=your_password         # RCON password from server.properties
 
 # Database Configuration
 DB_PATH=data/minecraft_dashboard.db    # SQLite database path
 
 # SSH Configuration (for performance metrics)
-SSH_HOST=192.168.1.209                 # SSH host (usually same as MC_SERVER_HOST)
+SSH_HOST=192.168.1.x                   # SSH host (usually same as MC_SERVER_HOST)
 SSH_PORT=22                            # SSH port (default 22)
 SSH_USER=ubuntu                        # SSH username
 SSH_KEY_PATH=~/.ssh/mc_dashboard_key   # Path to SSH private key
-MC_SERVER_DIR=/home/ubuntu/minecraft   # Minecraft server directory on remote host
+MC_SERVER_DIR=/mnt/storage/minecraft   # Minecraft server directory on remote host
 ```
 
-**Note:** For SSH metrics to work, you need to set up SSH key authentication:
+**Note:** For SSH metrics to work, set up SSH key authentication:
 ```bash
 # Generate SSH key (if you don't have one)
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/mc_dashboard_key -N ""
 
 # Copy public key to Minecraft server
-ssh-copy-id -i ~/.ssh/mc_dashboard_key.pub ubuntu@192.168.1.209
+ssh-copy-id -i ~/.ssh/mc_dashboard_key.pub ubuntu@192.168.1.x
 
 # Test the connection
-ssh -i ~/.ssh/mc_dashboard_key ubuntu@192.168.1.209 "uptime"
+ssh -i ~/.ssh/mc_dashboard_key ubuntu@192.168.1.x "uptime"
 ```
 
 4. **Start the dashboard**
@@ -149,143 +148,139 @@ python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
 http://localhost:8000
 ```
 
-You should see:
-```
-Database initialized
-No orphaned sessions found
-Background polling task started - polling RCON every 5 seconds
-Cache updated: Server online, 0/20 players
-```
-
 ## Docker Deployment
 
-The dashboard is containerized and available as a Docker image for easy deployment.
+```bash
+docker run -d \
+  --name minecraft-dashboard \
+  -p 8000:8000 \
+  -v $(pwd)/data:/app/data \
+  -v ~/.ssh/mc_dashboard_key:/home/appuser/.ssh/mc_dashboard_key:ro \
+  -e MC_SERVER_HOST=192.168.1.x \
+  -e MC_RCON_PORT=25576 \
+  -e MC_RCON_PASSWORD=your_password \
+  -e SSH_HOST=192.168.1.x \
+  -e SSH_USER=ubuntu \
+  -e MC_SERVER_DIR=/mnt/storage/minecraft \
+  fullstackant/minecraft-dashboard:latest
+```
 
 ### Building Your Own Image
 
-1. **Clone the repository**
-```bash
-git clone https://github.com/anthonyi7/minecraft-dashboard.git
-cd minecraft-dashboard
-```
-
-2. **Build the Docker image**
 ```bash
 docker build -t YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest .
+docker push YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
 ```
 
-3. **Push to DockerHub (optional)**
+The public nginx image (for the static snapshot tier) is built separately:
 ```bash
-docker login
-docker push YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
+docker build -f Dockerfile.public -t YOUR_DOCKERHUB_USERNAME/minecraft-dashboard-public:latest .
+docker push YOUR_DOCKERHUB_USERNAME/minecraft-dashboard-public:latest
 ```
 
 ## Kubernetes Deployment
 
-For production deployments, Kubernetes provides orchestration, auto-restart, and persistent storage.
-
 ### Prerequisites
 
-- Kubernetes cluster (GKE, EKS, AKS, or local k3s/minikube)
+- Kubernetes cluster with:
+  - [Longhorn](https://longhorn.io/) for persistent storage (replicated across nodes)
+  - [MetalLB](https://metallb.universe.tf/) for LoadBalancer IPs (bare-metal)
+  - [ingress-nginx](https://kubernetes.github.io/ingress-nginx/) (community Helm chart — `kubernetes.github.io/ingress-nginx`, **not** `helm.nginx.com`)
+  - [cert-manager](https://cert-manager.io/) for automatic TLS certificates
 - `kubectl` configured to access your cluster
 - SSH private key for accessing Minecraft server
 
-### Quick Deploy with Kustomize
+### Deploy
 
-1. **Clone the repository**
+1. **Create the namespace**
 ```bash
-git clone https://github.com/anthonyi7/minecraft-dashboard.git
-cd minecraft-dashboard
+kubectl create namespace mff
 ```
 
-2. **Edit configuration**
+2. **Create secrets**
+```bash
+# SSH key for metrics collection
+kubectl create secret generic minecraft-dashboard-ssh-key \
+  --from-file=mc_dashboard_key=$HOME/.ssh/mc_dashboard_key \
+  -n mff
 
-Update [k8s/configmap.yaml](k8s/configmap.yaml) with your server details:
+# RCON password
+kubectl create secret generic minecraft-dashboard-secret \
+  --from-literal=MC_RCON_PASSWORD='your_rcon_password' \
+  -n mff
+```
+
+3. **Update configuration**
+
+Edit [k8s/configmap.yaml](k8s/configmap.yaml) with your server details:
 ```yaml
 data:
-  MC_SERVER_HOST: "192.168.1.209"  # Your Minecraft server IP
-  MC_RCON_PORT: "25575"
-  SSH_HOST: "192.168.1.209"
+  MC_SERVER_HOST: "192.168.1.x"
+  MC_RCON_PORT: "25576"
+  SSH_HOST: "192.168.1.x"
   SSH_USER: "ubuntu"
-  MC_SERVER_DIR: "/home/ubuntu/minecraft"
+  MC_SERVER_DIR: "/mnt/storage/minecraft"
 ```
 
-Update [k8s/deployment.yaml](k8s/deployment.yaml) with your DockerHub image:
+Update the `nodeSelector` in [k8s/deployment.yaml](k8s/deployment.yaml) and [k8s/public-deployment.yaml](k8s/public-deployment.yaml) to pin both pods to the same worker node (required because Longhorn RWO volumes attach to one node at a time):
 ```yaml
-image: YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:latest
+nodeSelector:
+  kubernetes.io/hostname: worker1  # change to your target node
 ```
 
-3. **Create Kubernetes Secrets**
-
+4. **Deploy with Kustomize**
 ```bash
-# Create SSH key secret from your private key file
-kubectl create secret generic minecraft-dashboard-ssh-key \
-  --from-file=mc_dashboard_key=$HOME/.ssh/mc_dashboard_key
-
-# Create RCON password secret
-kubectl create secret generic minecraft-dashboard-secret \
-  --from-literal=MC_RCON_PASSWORD='your_rcon_password_here'
-```
-
-4. **Deploy to Kubernetes**
-
-```bash
-# Using kubectl apply
-kubectl apply -f k8s/
-
-# Or using Kustomize
 kubectl apply -k k8s/
 ```
 
-5. **Access the dashboard**
+5. **Set PV reclaim policy to Retain**
 
+After the PVC is created, patch the backing PV so it survives namespace deletion:
 ```bash
-# Get the external IP (for LoadBalancer service)
-kubectl get service minecraft-dashboard
-
-# Or use port-forward for testing
-kubectl port-forward service/minecraft-dashboard 8000:80
+PV=$(kubectl get pvc minecraft-dashboard-data -n mff -o jsonpath='{.spec.volumeName}')
+kubectl patch pv $PV -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
 ```
-
-Then open http://localhost:8000 in your browser.
 
 ### Kubernetes Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│          Kubernetes Cluster                 │
-│                                             │
-│  ┌───────────────────────────────────────┐ │
-│  │   Service (LoadBalancer)              │ │
-│  │   External IP: x.x.x.x:80             │ │
-│  └──────────────┬────────────────────────┘ │
-│                 │                           │
-│  ┌──────────────▼────────────────────────┐ │
-│  │   Deployment (1 replica)              │ │
-│  │   - FastAPI container                 │ │
-│  │   - Resource limits: 512Mi / 500m CPU │ │
-│  │   - Health checks: /api/healthz       │ │
-│  └──┬────────────────────────────────┬───┘ │
-│     │                                │     │
-│  ┌──▼──────────────┐     ┌───────────▼──┐ │
-│  │ PVC (1Gi)       │     │ Secrets      │ │
-│  │ SQLite database │     │ - SSH key    │ │
-│  │ ReadWriteOnce   │     │ - RCON pass  │ │
-│  └─────────────────┘     └──────────────┘ │
-└─────────────────────────────────────────────┘
+Namespace: mff
+├── secure-minecraft-dashboard    Deployment (1 replica, pinned to worker1)
+│   ├── PVC: minecraft-dashboard-data (1Gi, Longhorn, ReclaimPolicy: Retain)
+│   └── Secret: minecraft-dashboard-ssh-key
+│
+├── minecraft-dashboard           Deployment (1 replica, pinned to worker1)
+│   └── PVC: snapshot-data (50Mi, Longhorn) — read-only mount
+│
+├── snapshot-writer               CronJob (every 1 min)
+│   └── Fetches /api/* from secure backend → writes snapshot.json to snapshot-data PVC
+│
+├── db-backup                     CronJob (daily at 3 AM)
+│   └── Copies SQLite db → ubuntu@192.168.1.x:/home/ubuntu/mc_dashboard_backups/
+│       Keeps last 7 daily backups
+│
+└── minecraft-dashboard           Ingress
+    └── status.mff-server.com → minecraft-dashboard:80 (TLS via cert-manager)
 ```
 
 ### Kubernetes Files Reference
 
 | File | Description |
 |------|-------------|
-| [k8s/deployment.yaml](k8s/deployment.yaml) | Main application deployment with resource limits and health checks |
-| [k8s/service.yaml](k8s/service.yaml) | LoadBalancer service exposing the dashboard on port 80 |
-| [k8s/pvc.yaml](k8s/pvc.yaml) | PersistentVolumeClaim for SQLite database (1Gi) |
-| [k8s/configmap.yaml](k8s/configmap.yaml) | Non-sensitive environment variables |
-| [k8s/secrets-example.yaml](k8s/secrets-example.yaml) | Template for creating secrets (DO NOT commit with real values!) |
-| [k8s/kustomization.yaml](k8s/kustomization.yaml) | Kustomize configuration for easy manifest management |
+| [k8s/deployment.yaml](k8s/deployment.yaml) | Secure FastAPI backend — RCON/SSH, SQLite, internal only |
+| [k8s/service.yaml](k8s/service.yaml) | ClusterIP service for secure backend (port 8000) |
+| [k8s/pvc.yaml](k8s/pvc.yaml) | PVC for SQLite database (1Gi, Longhorn) |
+| [k8s/public-deployment.yaml](k8s/public-deployment.yaml) | Public nginx — serves index.html + snapshot.json |
+| [k8s/public-service.yaml](k8s/public-service.yaml) | ClusterIP service for public nginx (port 80) |
+| [k8s/snapshot-pvc.yaml](k8s/snapshot-pvc.yaml) | PVC for snapshot.json shared between cronjob and public nginx (50Mi) |
+| [k8s/snapshot-cronjob.yaml](k8s/snapshot-cronjob.yaml) | Cronjob that polls the secure backend and writes snapshot.json every minute |
+| [k8s/db-backup-cronjob.yaml](k8s/db-backup-cronjob.yaml) | Daily cronjob that SCPs the SQLite db to the Minecraft server (7-day retention) |
+| [k8s/ingress-status.yaml](k8s/ingress-status.yaml) | Ingress for status.mff-server.com with TLS via cert-manager |
+| [k8s/configmap.yaml](k8s/configmap.yaml) | Non-sensitive environment variables (server IPs, ports, paths) |
+| [k8s/secrets-example.yaml](k8s/secrets-example.yaml) | Template for creating secrets (do not commit with real values) |
+| [k8s/kustomization.yaml](k8s/kustomization.yaml) | Kustomize config — applies all manifests to namespace `mff` |
 
+<<<<<<< HEAD
 ### Production Best Practices
 
 **Security:**
@@ -310,275 +305,216 @@ SQLite limitation: Cannot scale beyond 1 replica (ReadWriteOnce PVC)
 For high availability, migrate to PostgreSQL or MySQL and use ReadWriteMany storage
 
 ### Updating the Deployment
+=======
+### Data Protection
+>>>>>>> 3f1511e (Update for k8s manifests, data protection, TLS, backups, and more)
 
+**Reclaim policy: Retain**
+The SQLite PVC's backing PV is patched to `Retain`. If the namespace or PVC is deleted, the Longhorn volume is preserved (status goes to `Released`). To reattach after rebuilding:
 ```bash
-# Build and push new image
-docker build -t YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:v1.0.1 .
-docker push YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:v1.0.1
+# Find the released PV
+kubectl get pv | grep Released
 
-# Update deployment
-kubectl set image deployment/minecraft-dashboard \
-  dashboard=YOUR_DOCKERHUB_USERNAME/minecraft-dashboard:v1.0.1
+# Remove the old claimRef so it can be rebound
+kubectl patch pv <pv-name> --type=json \
+  -p='[{"op":"remove","path":"/spec/claimRef"}]'
 
-# Or edit kustomization.yaml and reapply
+# Recreate the PVC — it will bind to the existing PV
 kubectl apply -k k8s/
 ```
 
+<<<<<<< HEAD
 
+=======
+**Daily off-cluster backup**
+The `db-backup` CronJob runs at 3 AM and SCPs the database to `/home/ubuntu/mc_dashboard_backups/` on the Minecraft server, keeping the last 7 daily files.
+
+To restore from backup:
+```bash
+# Copy backup from Minecraft server to local machine
+scp ubuntu@192.168.1.x:/home/ubuntu/mc_dashboard_backups/minecraft_dashboard_YYYYMMDD.db ./restore.db
+
+# Copy into the running pod
+POD=$(kubectl get pod -n mff -l app=secure-minecraft-dashboard -o jsonpath='{.items[0].metadata.name}')
+kubectl cp restore.db mff/$POD:/app/data/minecraft_dashboard.db
+
+# Restart the pod to reinitialize
+kubectl rollout restart deployment/secure-minecraft-dashboard -n mff
+```
+
+To trigger a manual backup immediately:
+```bash
+kubectl create job --from=cronjob/db-backup db-backup-manual -n mff
+kubectl logs -n mff -l job-name=db-backup-manual
+```
+
+### Ingress & TLS Notes
+
+This setup uses the **community ingress-nginx controller** (`kubernetes.github.io/ingress-nginx` Helm chart). The NGINX Inc. controller (`helm.nginx.com`) is **not compatible** with cert-manager's HTTP01 solver — it rejects multiple ingresses sharing a hostname, which blocks ACME challenge validation.
+
+Install the correct controller:
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace
+```
+
+### Troubleshooting Kubernetes
+
+```bash
+# Check pod status
+kubectl get pods -n mff
+
+# Secure backend logs (RCON/SSH errors will appear here)
+kubectl logs -n mff -l app=secure-minecraft-dashboard --tail=50
+
+# Public nginx logs
+kubectl logs -n mff -l app=minecraft-dashboard --tail=50
+
+# Check snapshot cronjob last run
+kubectl get jobs -n mff
+
+# Check certificate status
+kubectl get certificate -n mff
+kubectl describe certificate status-mff-server-tls -n mff
+
+# Check ingress
+kubectl get ingress -n mff
+kubectl describe ingress minecraft-dashboard -n mff
+
+# Verify configmap values are correct
+kubectl get configmap minecraft-dashboard-config -n mff -o yaml
+
+# Port-forward to inspect the secure backend API directly
+kubectl port-forward svc/secure-minecraft-dashboard -n mff 8000:8000
+# then visit: http://localhost:8000/api/status
+```
+>>>>>>> 3f1511e (Update for k8s manifests, data protection, TLS, backups, and more)
 
 ## Configuration
 
 ### Environment Variables
 
-All configuration is done via `.env` file (git-ignored for security):
-
-#### RCON Configuration
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MC_SERVER_HOST` | Minecraft server IP or hostname | `localhost` |
-| `MC_RCON_PORT` | RCON port number | `25575` |
+| `MC_RCON_PORT` | RCON port number | `25576` |
 | `MC_RCON_PASSWORD` | RCON password (must match server.properties) | *(required)* |
-
-#### Database Configuration
-| Variable | Description | Default |
-|----------|-------------|---------|
 | `DB_PATH` | Path to SQLite database file | `data/minecraft_dashboard.db` |
-
-#### SSH Configuration (for Performance Metrics)
-| Variable | Description | Default |
-|----------|-------------|---------|
 | `SSH_HOST` | SSH host for metrics collection | `localhost` |
 | `SSH_PORT` | SSH port | `22` |
 | `SSH_USER` | SSH username | `ubuntu` |
-| `SSH_KEY_PATH` | Path to SSH private key (supports `~` expansion) | `~/.ssh/mc_dashboard_key` |
-| `MC_SERVER_DIR` | Minecraft server directory on remote host | `/home/ubuntu/minecraft` |
-
-### Adjusting Poll Interval
-
-Edit the sleep interval in [app.py](app.py) background polling loop:
-```python
-await asyncio.sleep(5)  # Change 5 to desired seconds (line ~125)
-```
-
-**Note:** Lower intervals increase RCON/SSH load. Recommended range: 5-30 seconds.
-
-### Adjusting Staleness Threshold
-
-Edit [cache_service.py](cache_service.py) to change when data is considered stale:
-```python
-result["stale"] = age_seconds > 30  # Change 30 to desired seconds (line ~117)
-```
+| `SSH_KEY_PATH` | Path to SSH private key | `~/.ssh/mc_dashboard_key` |
+| `MC_SERVER_DIR` | Minecraft server directory on remote host | `/mnt/storage/minecraft` |
 
 ## API Endpoints
 
-### `GET /api/healthz`
-Health check for the dashboard backend.
-
-**Response:**
-```json
-{"ok": true}
-```
-
-### `GET /api/status`
-Complete server status with players, performance metrics, and metadata.
-
-**Response:**
-```json
-{
-  "online": true,
-  "players": {
-    "current": ["Steve", "Alex"],
-    "count": 2,
-    "max": 20
-  },
-  "performance": {
-    "tps": 19.87,
-    "memory_used_mb": 4096,
-    "memory_total_mb": 8192,
-    "cpu_percent": 45.2,
-    "disk_used_gb": 15.3,
-    "disk_total_gb": 50.0
-  },
-  "stale": false,
-  "last_updated": "2024-01-15T12:34:56Z",
-  "last_error": null
-}
-```
-
-**Performance Metrics Explained:**
-- `tps`: Server ticks per second (20.0 = perfect, <19.0 = lag)
-- `memory_used_mb` / `memory_total_mb`: Java process memory usage
-- `cpu_percent`: CPU usage of Minecraft process (0-100% per core)
-- `disk_used_gb` / `disk_total_gb`: Disk usage of server directory
-
-### `GET /api/players`
-Player information only.
-
-**Response:**
-```json
-{
-  "current": ["Steve", "Alex"],
-  "count": 2,
-  "max": 20,
-  "stale": false,
-  "last_updated": "2024-01-15T12:34:56Z"
-}
-```
-
-### `GET /api/today`
-Player activity statistics for today (midnight Pacific to now).
-
-**Response:**
-```json
-{
-  "date": "2024-02-15",
-  "timezone": "America/Los_Angeles (Pacific)",
-  "players": [
-    {
-      "name": "Steve",
-      "total_playtime_seconds": 7200,
-      "total_playtime_formatted": "2h 0m",
-      "session_count": 3,
-      "currently_online": false
-    },
-    {
-      "name": "Alex",
-      "total_playtime_seconds": 3600,
-      "total_playtime_formatted": "1h 0m",
-      "session_count": 1,
-      "currently_online": true
-    }
-  ],
-  "summary": {
-    "unique_players": 2,
-    "total_playtime_seconds": 10800,
-    "total_sessions": 4
-  }
-}
-```
-
-**Notes:**
-- "Today" is calculated based on Pacific time (midnight to now)
-- `currently_online` reflects real-time RCON data
-- Active sessions (players still online) are included with current duration
-- Data persists across dashboard restarts via SQLite
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/healthz` | Health check — returns `{"ok": true}` |
+| `GET /api/status` | Live server status, player list, performance metrics |
+| `GET /api/today` | Player activity for today (midnight Pacific to now) |
+| `GET /api/yesterday` | Player activity for yesterday (Pacific time) |
+| `GET /api/leaderboards` | Total playtime, blocks destroyed, distance traveled |
 
 ## Project Structure
 
 ```
 minecraft_dashboard/
-├── app.py              # FastAPI application and background polling
-├── cache_service.py    # In-memory cache for server data
-├── rcon_service.py     # RCON communication with Minecraft server
-├── db_service.py       # SQLite database for player session tracking
-├── ssh_service.py      # SSH-based performance metrics collection
-├── stats_service.py    # Minecraft statistics collection (blocks, distance, playtime)
-├── config.py           # Environment variable configuration
-├── requirements.txt    # Python dependencies (FastAPI, mcrcon, paramiko, etc.)
-├── .env                # Local config (git-ignored, contains secrets)
-├── .env.example        # Template for .env file
-├── .gitignore          # Git ignore rules
-├── RCON_SETUP.md       # Guide to enable RCON on Minecraft server
-├── Dockerfile          # Multi-stage Docker build configuration
-├── .dockerignore       # Files to exclude from Docker build context
-├── data/               # Auto-created directory for database (git-ignored)
-│   └── minecraft_dashboard.db  # SQLite database (player sessions)
-├── k8s/                # Kubernetes manifests
-│   ├── deployment.yaml      # K8s Deployment with health checks and resource limits
-│   ├── service.yaml         # K8s Service (LoadBalancer)
-│   ├── pvc.yaml             # PersistentVolumeClaim for SQLite database
-│   ├── configmap.yaml       # Non-sensitive environment variables
-│   ├── secrets-example.yaml # Template for creating Secrets (git-ignored)
-│   └── kustomization.yaml   # Kustomize configuration
-├── static/
-│   ├── index.html      # Dashboard UI (server status, player activity table, leaderboards)
-│   ├── styles.css      # Styling (gradient theme, responsive tables)
-│   └── app.js          # Frontend JavaScript (API polling, UI updates)
-└── README.md           # This file
+├── app.py                  # FastAPI app and background polling
+├── cache_service.py        # In-memory cache for server data
+├── rcon_service.py         # RCON communication with Minecraft server
+├── db_service.py           # SQLite for player session tracking
+├── ssh_service.py          # SSH-based performance metrics
+├── stats_service.py        # Minecraft stats files (blocks, distance, playtime)
+├── config.py               # Environment variable configuration
+├── requirements.txt        # Python dependencies
+├── Dockerfile              # Secure backend image (FastAPI)
+├── Dockerfile.public       # Public image (nginx serving static snapshot)
+├── .env                    # Local config (git-ignored)
+├── .env.example            # Template for .env
+├── seed_db.py              # One-time script to seed SQLite from known player totals
+├── public/
+│   ├── index.html          # Dashboard UI (reads from /snapshot.json)
+│   └── nginx.conf          # Nginx config for public container
+├── k8s/                    # Kubernetes manifests (see table above)
+├── data/                   # Auto-created; holds minecraft_dashboard.db (git-ignored)
+├── RCON_SETUP.md           # Guide to enable RCON on Minecraft server
+└── README.md               # This file
 ```
 
 
+<<<<<<< HEAD
+=======
+### Dashboard shows server as "Offline"
+
+Check the secure backend logs first:
+```bash
+kubectl logs -n mff -l app=secure-minecraft-dashboard --tail=30
+```
+
+Common causes:
+- `No route to host` — wrong IP in configmap. Verify `MC_SERVER_HOST` and `SSH_HOST`.
+- `Login failed` — wrong RCON password in secret. Re-create: `kubectl create secret generic minecraft-dashboard-secret --from-literal=MC_RCON_PASSWORD='correct_password' -n mff --dry-run=client -o yaml | kubectl replace -f -`, then restart the pod.
+- After any configmap/secret change, restart: `kubectl rollout restart deployment/secure-minecraft-dashboard -n mff`
+
+### Public page shows no data / "No activity"
+
+The public page reads from `snapshot.json` on the shared PVC, written by the snapshot cronjob every minute. Check the cronjob:
+```bash
+kubectl get jobs -n mff | grep snapshot
+kubectl logs -n mff -l job-name=<latest-snapshot-job>
+```
+If the secure backend is offline, the cronjob will skip writing. Fix the backend first.
+
+### Certificate not issuing
+
+Ensure you are using the community ingress-nginx controller (see Ingress & TLS Notes above). The NGINX Inc. controller is incompatible with cert-manager HTTP01 challenges.
+
+### SSH Issues
+
+```bash
+# Missing key secret
+kubectl get secret minecraft-dashboard-ssh-key -n mff
+
+# Regenerate and recreate if missing
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/mc_dashboard_key -N ""
+ssh-copy-id -i ~/.ssh/mc_dashboard_key.pub ubuntu@192.168.1.x
+kubectl create secret generic minecraft-dashboard-ssh-key \
+  --from-file=mc_dashboard_key=$HOME/.ssh/mc_dashboard_key -n mff
+```
+>>>>>>> 3f1511e (Update for k8s manifests, data protection, TLS, backups, and more)
 
 ## Database Schema
 
-The SQLite database uses a single table for player session tracking:
-
 ```sql
-CREATE TABLE player_sessions (
+CREATE TABLE player_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_name TEXT NOT NULL,
-    joined_at TIMESTAMP NOT NULL,      -- UTC timestamp when player joined
-    left_at TIMESTAMP DEFAULT NULL,    -- NULL = currently online
-    duration_seconds INTEGER DEFAULT NULL,
+    event_type TEXT NOT NULL,          -- 'join' or 'leave'
+    timestamp TIMESTAMP NOT NULL,      -- UTC
+    session_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-**Session Tracking Logic:**
-1. Background polling compares current player list with previous poll
-2. New players trigger `INSERT` with `left_at=NULL` (indicates online)
-3. Players who left trigger `UPDATE` to set `left_at` and compute `duration_seconds`
-4. On startup, orphaned sessions (left_at=NULL from crashes) are closed with 0 duration
+Today/Yesterday activity is derived at query time by summing join→leave pairs within the Pacific time day boundary.
 
-**Example Query (Today's Activity):**
-```sql
-SELECT
-    player_name,
-    COUNT(*) as session_count,
-    SUM(CASE
-        WHEN left_at IS NULL THEN (strftime('%s', 'now') - strftime('%s', joined_at))
-        ELSE duration_seconds
-    END) as total_playtime_seconds
-FROM player_sessions
-WHERE joined_at >= datetime('now', 'start of day', '-8 hours')  -- Pacific time
-GROUP BY player_name
-ORDER BY total_playtime_seconds DESC;
-```
+## Roadmap
 
-## Performance Metrics via SSH
+### Completed
+- [x] Real TPS, Memory, CPU, and Disk metrics via SSH
+- [x] SQLite player session tracking with today/yesterday panels
+- [x] Leaderboards from Minecraft stats files (playtime, blocks, distance)
+- [x] Docker containerization (secure backend + public nginx images)
+- [x] Kubernetes deployment with two-tier architecture
+- [x] Ingress with TLS via cert-manager (Let's Encrypt)
+- [x] Longhorn PVC with Retain policy for data safety
+- [x] Daily off-cluster SQLite backup to Minecraft server
 
-The dashboard collects real performance metrics from the Minecraft server host via SSH:
-
-| Metric | SSH Command | Description |
-|--------|-------------|-------------|
-| **CPU** | `ps -p {pid} -o %cpu` | CPU usage of Java/Minecraft process |
-| **Memory** | `ps -p {pid} -o rss` | RSS memory usage in MB |
-| **Disk** | `df -BG {server_dir}` | Disk usage of server directory |
-| **TPS** | `tail -100 logs/latest.log \| grep -i tps` | Server TPS (if logged by mods) |
-
-**Process Discovery:**
-- Finds Minecraft PID: `pgrep -f 'java.*minecraft|java.*forge|java.*neoforge'`
-- Caches PID to reduce SSH overhead
-- Falls back to safe values (0.0, 20.0 TPS) on SSH failure
-
-## Development
-
-The server runs with auto-reload enabled. Any changes to Python files will automatically restart the backend.
-
-**Start development server:**
-```bash
-python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Stop server:**
-```
-Ctrl+C
-```
-
-**View database contents:**
-```bash
-sqlite3 data/minecraft_dashboard.db "SELECT * FROM player_sessions ORDER BY joined_at DESC LIMIT 10;"
-```
-
-**Clear database (fresh start):**
-```bash
-rm data/minecraft_dashboard.db
-# Database will be recreated on next app start
-```
-
-## Contributing
-
-Feel free to open issues or submit pull requests!
+### Planned
+- [ ] PostgreSQL support for multi-replica deployments
+- [ ] Prometheus metrics endpoint
+- [ ] Helm chart
 
 ## License
 
@@ -586,5 +522,9 @@ MIT
 
 ---
 
+<<<<<<< HEAD
 Built using FastAPI, RCON, and modern web technologies.
 
+=======
+Built with FastAPI, RCON, and nginx.
+>>>>>>> 3f1511e (Update for k8s manifests, data protection, TLS, backups, and more)

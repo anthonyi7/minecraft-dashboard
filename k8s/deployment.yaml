@@ -1,21 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: minecraft-dashboard
+  name: secure-minecraft-dashboard
+  namespace: mff
   labels:
-    app: minecraft-dashboard
+    app: secure-minecraft-dashboard
 spec:
   replicas: 1 # SQLite can't be shared across multiple pods, so keep at 1
   strategy:
     type: Recreate # Don't run multiple pods simultaneously (SQLite limitation)
   selector:
     matchLabels:
-      app: minecraft-dashboard
+      app: secure-minecraft-dashboard
   template:
     metadata:
       labels:
-        app: minecraft-dashboard
+        app: secure-minecraft-dashboard
     spec:
+      # Pin to a single worker so the SQLite PVC is always local to this node.
+      # Change worker1 here if you want to use a different node.
+      nodeSelector:
+        kubernetes.io/hostname: worker1
+
       # Security context for the pod - ensures volumes are accessible by appuser
       securityContext:
         fsGroup: 1000 # Ensures mounted volumes are readable by GID 1000 (appuser's group)

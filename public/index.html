@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFF Server Status</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(180deg, #696969 0%, #c2825e 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { text-align: center; color: white; margin-bottom: 30px; }
+        header h1 { font-size: 2.5rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .last-updated-header { color: white; font-size: 0.9rem; opacity: 0.8; margin-top: 8px; text-align: center; }
+        .last-updated-header span { font-weight: bold; }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 900px) { .dashboard { grid-template-columns: 1fr; } }
+        .card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .card h2 { color: #333; margin-bottom: 15px; font-size: 1.3rem; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        .status { font-size: 1.5rem; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; }
+        .status-online { background: #10b981; color: white; }
+        .status-offline { background: #ef4444; color: white; }
+        #player-count { font-size: 1.2rem; color: #667eea; font-weight: bold; margin-bottom: 10px; }
+        #player-list { list-style: none; padding-left: 0; }
+        #player-list li { padding: 8px; margin: 5px 0; background: #f3f4f6; border-radius: 5px; color: #333; }
+        .metric { padding: 10px 0; display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; }
+        .metric:last-child { border-bottom: none; }
+        .metric .label { font-weight: bold; color: #666; }
+        .metric span:last-child { color: #667eea; font-weight: bold; }
+        .activity-panels { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 700px) { .activity-panels { grid-template-columns: 1fr; } }
+        .today-summary { font-size: 0.95rem; color: #666; margin-bottom: 15px; padding: 10px; background: #f9fafb; border-radius: 5px; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        table.leaderboard-table { font-size: 0.9rem; }
+        thead { background: #f3f4f6; }
+        th { text-align: left; padding: 12px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+        th:first-child { text-align: center; width: 40px; }
+        .leaderboard-table th:last-child { text-align: right; }
+        td { padding: 12px; border-bottom: 1px solid #e5e7eb; color: #333; }
+        tbody tr:hover { background: #f9fafb; }
+        tbody tr:last-child td { border-bottom: none; }
+        .player-name { font-weight: 500; color: #1f2937; }
+        .playtime { color: #667eea; font-weight: 600; }
+        .rank { text-align: center; font-weight: 600; color: #667eea; }
+        .leaderboard-value { text-align: right; font-weight: 600; color: #667eea; }
+        .no-data, .error, .loading { text-align: center; padding: 20px; color: #9ca3af; font-style: italic; }
+        .error { color: #ef4444; }
+        .stale-banner {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MFF Server Status</h1>
+            <p class="last-updated-header">Data as of: <span id="last-updated">Loading...</span></p>
+        </header>
+        <div id="stale-banner" class="stale-banner" style="display:none">
+            Data may be stale — snapshot fetch failed. Retrying...
+        </div>
+        <main class="dashboard">
+            <div class="card">
+                <h2>Server Status</h2>
+                <div id="server-status" class="status">Loading...</div>
+                <div class="metric" style="margin-top: 1rem;">
+                    <span class="label">Uptime:</span>
+                    <span id="uptime">--</span>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Players Online</h2>
+                <div id="player-count">Loading...</div>
+                <ul id="player-list"></ul>
+            </div>
+            <div class="card">
+                <h2>Performance</h2>
+                <div class="metric"><span class="label">TPS:</span><span id="tps">--</span></div>
+                <div class="metric"><span class="label">Memory:</span><span id="memory">--</span></div>
+                <div class="metric"><span class="label">CPU:</span><span id="cpu">--</span></div>
+                <div class="metric"><span class="label">Disk:</span><span id="disk">--</span></div>
+            </div>
+
+            <div class="activity-panels">
+                <div class="card">
+                    <h2>Yesterday's Player Activity</h2>
+                    <div id="yesterday-summary" class="today-summary">Loading...</div>
+                    <table>
+                        <thead><tr><th>Player</th><th>Total Time</th></tr></thead>
+                        <tbody id="yesterday-activity-body">
+                            <tr><td colspan="2" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <h2>Today's Player Activity</h2>
+                    <div id="today-summary" class="today-summary">Loading...</div>
+                    <table>
+                        <thead><tr><th>Player</th><th>Total Time Today</th></tr></thead>
+                        <tbody id="today-activity-body">
+                            <tr><td colspan="2" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Total Playtime</h2>
+                <table class="leaderboard-table">
+                    <thead><tr><th>#</th><th>Player</th><th>Time</th></tr></thead>
+                    <tbody id="playtime-leaderboard"><tr><td colspan="3" class="loading">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <div class="card">
+                <h2>Blocks Destroyed</h2>
+                <table class="leaderboard-table">
+                    <thead><tr><th>#</th><th>Player</th><th>Blocks</th></tr></thead>
+                    <tbody id="blocks-leaderboard"><tr><td colspan="3" class="loading">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <div class="card">
+                <h2>Distance Traveled</h2>
+                <table class="leaderboard-table">
+                    <thead><tr><th>#</th><th>Player</th><th>Distance</th></tr></thead>
+                    <tbody id="distance-leaderboard"><tr><td colspan="3" class="loading">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+    <script>
+        function formatUptime(seconds) {
+            if (!seconds || seconds === 0) return '--';
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            if (days > 0) return days + 'd ' + hours + 'h ' + minutes + 'm';
+            if (hours > 0) return hours + 'h ' + minutes + 'm';
+            return minutes + 'm';
+        }
+
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        function setHtml(id, html) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        }
+
+        function renderActivityTable(tbodyId, players, colspan) {
+            if (!players || players.length === 0) {
+                setHtml(tbodyId, '<tr><td colspan="' + colspan + '" class="no-data">No activity</td></tr>');
+                return;
+            }
+            let html = '';
+            players.forEach(function(p) {
+                html += '<tr><td class="player-name">' + p.name + '</td><td class="playtime">' + p.total_playtime_formatted + '</td></tr>';
+            });
+            setHtml(tbodyId, html);
+        }
+
+        function renderLeaderboard(tbodyId, players) {
+            if (!players || players.length === 0) {
+                setHtml(tbodyId, '<tr><td colspan="3" class="no-data">No data</td></tr>');
+                return;
+            }
+            let html = '';
+            players.forEach(function(p, i) {
+                html += '<tr><td class="rank">' + (i + 1) + '</td><td class="player-name">' + p.name + '</td><td class="leaderboard-value">' + p.formatted + '</td></tr>';
+            });
+            setHtml(tbodyId, html);
+        }
+
+        async function loadSnapshot() {
+            try {
+                const resp = await fetch('/snapshot.json?t=' + Date.now());
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const snap = await resp.json();
+
+                document.getElementById('stale-banner').style.display = 'none';
+
+                const fetchedAt = new Date(snap.fetched_at);
+                const minutesAgo = Math.round((Date.now() - fetchedAt) / 60000);
+                const timeStr = fetchedAt.toLocaleTimeString();
+                setText('last-updated', timeStr + (minutesAgo > 1 ? ' (' + minutesAgo + 'm ago)' : ''));
+
+                if (snap.status) {
+                    const s = snap.status;
+                    const el = document.getElementById('server-status');
+                    el.textContent = s.online ? 'Online' : 'Offline';
+                    el.className = s.online ? 'status status-online' : 'status status-offline';
+                    setText('uptime', formatUptime(s.uptime_seconds));
+                    setText('player-count', s.players.count + ' / ' + s.players.max + ' players');
+
+                    const playerList = document.getElementById('player-list');
+                    playerList.innerHTML = '';
+                    (s.players.current || []).forEach(function(name) {
+                        const li = document.createElement('li');
+                        li.textContent = name;
+                        playerList.appendChild(li);
+                    });
+
+                    const p = s.performance;
+                    setText('tps', p.tps.toFixed(2));
+                    setText('memory', p.memory_used_mb + ' / ' + p.memory_total_mb + ' MB');
+                    setText('cpu', p.cpu_percent.toFixed(1) + '%');
+                    setText('disk', p.disk_used_gb.toFixed(1) + ' / ' + p.disk_total_gb.toFixed(1) + ' GB');
+                }
+
+                if (snap.today) {
+                    const t = snap.today;
+                    setText('today-summary', t.summary.unique_players + ' players \u2022 ' + t.summary.total_sessions + ' sessions');
+                    renderActivityTable('today-activity-body', t.players, 2);
+                }
+
+                if (snap.yesterday) {
+                    const y = snap.yesterday;
+                    setText('yesterday-summary', y.summary.unique_players + ' players \u2022 ' + y.summary.total_sessions + ' sessions');
+                    renderActivityTable('yesterday-activity-body', y.players, 2);
+                }
+
+                if (snap.leaderboards) {
+                    renderLeaderboard('playtime-leaderboard', snap.leaderboards.playtime);
+                    renderLeaderboard('blocks-leaderboard', snap.leaderboards.blocks);
+                    renderLeaderboard('distance-leaderboard', snap.leaderboards.distance);
+                }
+
+            } catch (e) {
+                console.error('Failed to load snapshot:', e);
+                document.getElementById('stale-banner').style.display = 'block';
+            }
+        }
+
+        loadSnapshot();
+        setInterval(loadSnapshot, 60000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snapshot-script
+  namespace: mff
+data:
+  snapshot.py: |
+    import json
+    import sys
+    import urllib.request
+    from datetime import datetime, timezone
+
+    BASE = "http://secure-minecraft-dashboard:8000"
+    OUTPUT = "/data/snapshot.json"
+
+    def fetch(path):
+        url = f"{BASE}{path}"
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return json.loads(resp.read().decode())
+        except Exception as e:
+            print(f"WARNING: Failed to fetch {path}: {e}", file=sys.stderr)
+            return None
+
+    def main():
+        status = fetch("/api/status")
+        today = fetch("/api/today")
+        yesterday = fetch("/api/yesterday")
+        leaderboards = fetch("/api/leaderboards")
+
+        if not any([status, today, yesterday, leaderboards]):
+            print("ERROR: All API calls failed, not writing snapshot", file=sys.stderr)
+            sys.exit(1)
+
+        snapshot = {
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "today": today,
+            "yesterday": yesterday,
+            "leaderboards": leaderboards,
+        }
+
+        with open(OUTPUT, "w") as f:
+            json.dump(snapshot, f)
+
+        print(f"Snapshot written at {snapshot['fetched_at']}")
+
+    if __name__ == "__main__":
+        main()
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: snapshot-writer
+  namespace: mff
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid  # Don't start a new job if the previous is still running
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: snapshot
+            image: python:3.11-slim
+            command: ["python", "/scripts/snapshot.py"]
+            volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: snapshot-data
+              mountPath: /data
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "200m"
+          volumes:
+          - name: script
+            configMap:
+              name: snapshot-script
+          - name: snapshot-data
+            persistentVolumeClaim:
+              claimName: snapshot-data

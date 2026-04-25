@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-dashboard
+  namespace: mff
+  labels:
+    app: minecraft-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft-dashboard
+  template:
+    metadata:
+      labels:
+        app: minecraft-dashboard
+    spec:
+      # Pin alongside the secure deployment so the snapshot PVC is on the same node.
+      nodeSelector:
+        kubernetes.io/hostname: worker1
+      containers:
+      - name: nginx
+        image: fullstackant/minecraft-dashboard-public:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        volumeMounts:
+        - name: snapshot-data
+          mountPath: /data
+          readOnly: true
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 101  # nginx user in alpine
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: snapshot-data
+        persistentVolumeClaim:
+          claimName: snapshot-data

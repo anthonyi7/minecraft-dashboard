@@ -1,0 +1,30 @@
+FROM nginx:alpine
+
+# Remove default nginx config
+RUN rm /etc/nginx/conf.d/default.conf
+
+# Copy public dashboard files
+COPY public/nginx.conf /etc/nginx/conf.d/default.conf
+COPY public/index.html /usr/share/nginx/html/index.html
+
+# Pre-create all nginx runtime dirs with correct ownership so the container
+# starts as the nginx user (uid 101) without needing CAP_CHOWN at runtime.
+RUN mkdir -p \
+        /var/cache/nginx/client_temp \
+        /var/cache/nginx/proxy_temp \
+        /var/cache/nginx/fastcgi_temp \
+        /var/cache/nginx/uwsgi_temp \
+        /var/cache/nginx/scgi_temp \
+    && chown -R nginx:nginx \
+        /var/cache/nginx \
+        /var/log/nginx \
+        /etc/nginx/conf.d \
+    && touch /var/run/nginx.pid \
+    && chown nginx:nginx /var/run/nginx.pid
+
+USER nginx
+
+EXPOSE 8080
+
+# snapshot.json is served from /data (PVC mounted at runtime)
+# nginx config aliases /snapshot.json → /data/snapshot.json

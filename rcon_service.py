@@ -11,6 +11,7 @@ This service provides a clean interface to:
 - (Future) Get server performance metrics
 """
 
+import asyncio
 from typing import Optional
 from mcrcon import MCRcon
 from config import config
@@ -49,11 +50,10 @@ class RCONService:
             response = await rcon.execute_command("list")
             # Returns: "There are 3 of a max of 20 players online: Steve, Alex, Herobrine"
         """
-        # Call synchronously - this is fine because RCON is only called from
-        # the background polling task, not from HTTP request handlers
-        # Using run_in_executor causes "signal only works in main thread" errors
-        # because mcrcon tries to set up signal handlers in __init__
-        return self._execute_sync(command)
+        # Run blocking RCON call in a thread pool to avoid blocking uvloop.
+        # uvicorn[standard] installs uvloop (libuv-based) which interferes with
+        # blocking socket timeouts when called directly from the event loop.
+        return await asyncio.to_thread(self._execute_sync, command)
 
     def _execute_sync(self, command: str) -> Optional[str]:
         """
