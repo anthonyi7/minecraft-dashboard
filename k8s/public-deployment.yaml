@@ -21,7 +21,7 @@ spec:
       containers:
       - name: nginx
         image: fullstackant/minecraft-dashboard-public:latest
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
           name: http
